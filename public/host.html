@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Panel host - Chachor Piecze</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <nav class="navbar">
+    <ul class="nav-links">
+      <li><a href="index.html">Zamów</a></li>
+      <li><a href="about.html">O nas</a></li>
+    </ul>
+  </nav>
+
+  <header class="hero">
+    <h1>Panel Host</h1>
+    <p>Dodawaj nowe produkty do sklepu</p>
+  </header>
+
+  <section class="host-section">
+    <form id="hostForm">
+      <input type="text" id="name" placeholder="Nazwa produktu" required>
+      <input type="number" id="price" placeholder="Cena" required>
+      <input type="text" id="desc" placeholder="Opis produktu" required>
+      <button type="submit">Dodaj produkt</button>
+    </form>
+    <div id="hostMessage"></div>
+  </section>
+
+  <script src="host.js"></script>
+</body>
+</html>

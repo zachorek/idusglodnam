@@ -11,9 +11,12 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Połączenie z MongoDB Atlas
-mongoose.connect('mongodb+srv://chachorpiecze:jasinio123@cluster0.sodyudf.mongodb.net/projekt0')
-  .then(() => console.log('✅ Połączono z MongoDB Atlas'))
-  .catch(err => console.error('❌ Błąd połączenia z MongoDB:', err));
+require('dotenv').config();
+const mongoose = require('mongoose');
+
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log('Połączono z MongoDB'))
+  .catch(err => console.error(err));
 
 // Modele
 const Product = mongoose.model('Product', new mongoose.Schema({

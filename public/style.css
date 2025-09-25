@@ -14,11 +14,46 @@ body {
 }
 
 /* Pasek nawigacji */
-
+/*
  .navbar {
   display: flex;
-  justify-content: space-between; /* linki po lewej, koszyk po prawej */
-  align-items: center;            /* wyrównanie w pionie */
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 30px;
+  background-color: #fff;
+  border-bottom: 1px solid #eee;
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+} */
+/*
+
+.nav-links {
+  list-style: none;
+  display: flex;
+  gap: 30px;
+  margin: 0;
+  padding: 0;
+} */
+
+
+/* .nav-links a {
+  text-decoration: none;
+  color: #333;
+  font-weight: 600;
+  font-size: 1.1rem;
+  transition: color 0.3s;
+}
+
+.nav-links a:hover {
+  color: #e67e22;
+} */
+
+.navbar {
+  display: flex;
+  justify-content: center;   /* środek będzie bazą */
+  align-items: center;
+  position: relative;        /* pozwoli ustawić koszyk absolutnie */
   padding: 15px 30px;
   background-color: #fff;
   border-bottom: 1px solid #eee;
@@ -27,7 +62,7 @@ body {
   z-index: 1000;
 }
 
-
+/* Linki w centrum */
 .nav-links {
   list-style: none;
   display: flex;
@@ -35,7 +70,6 @@ body {
   margin: 0;
   padding: 0;
 }
-
 
 .nav-links a {
   text-decoration: none;
@@ -123,8 +157,8 @@ body {
 }
 
 /* Koszyk */
-.cart {
-  margin-left: auto;       /* wypycha koszyk maksymalnie w prawo */
+/* .cart {
+  margin-left: auto;
   font-size: 1.1rem;
   font-weight: 600;
   color: #333;
@@ -134,6 +168,30 @@ body {
 
 .cart:hover {
   color: #e67e22;
+} */
+
+.cart {
+  position: absolute;
+  right: 30px;              /* odstęp od prawej krawędzi */
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #333;
+  text-decoration: none;
+  transition: color 0.3s;
+}
+
+.cart:hover {
+  color: #e67e22;
+}
+
+/* Licznik */
+#cartCount {
+  background: #e67e22;
+  color: #fff;
+  font-size: 0.85rem;
+  padding: 2px 8px;
+  border-radius: 12px;
+  margin-left: 6px;
 }
 
 /* Licznik */

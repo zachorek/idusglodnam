@@ -66,6 +66,33 @@ app.get('/:page', (req, res, next) => {
   });
 });
 
+const Order = mongoose.model("Order", new mongoose.Schema({
+  email: String,
+  phone: String,
+  comment: String,
+  payment: String,
+  products: [
+    {
+      id: String,
+      name: String,
+      price: Number,
+      quantity: Number
+    }
+  ],
+  createdAt: { type: Date, default: Date.now }
+}));
+
+app.post("/api/orders", async (req, res) => {
+  try {
+    const order = new Order(req.body);
+    await order.save();
+    res.json({ message: "Zamówienie zapisane", order });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Błąd zapisu zamówienia" });
+  }
+});
+
 // -------------------------
 
 // Start serwera

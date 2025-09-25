@@ -1,8 +1,10 @@
-let cart = [];
 const productGrid = document.getElementById("productGrid");
-const cartItems = document.getElementById("cartItems");
-const cartTotal = document.getElementById("cartTotal");
 
+// Koszyk klienta w sesji
+let cart = JSON.parse(sessionStorage.getItem("cart")) || [];
+const cartCount = document.getElementById("cartCount");
+
+// Pobranie produktów z backendu
 async function fetchProducts() {
   try {
     const res = await fetch('/api/products');
@@ -25,31 +27,31 @@ async function fetchProducts() {
   }
 }
 
+// Dodanie produktu do koszyka
 function addToCart(id, price, name) {
-  cart.push({ id, price, name });
-  renderCart();
-}
-
-function renderCart() {
-  cartItems.innerHTML = "";
-  let total = 0;
-
-  cart.forEach(item => {
-    const li = document.createElement("li");
-    li.textContent = `${item.name} - ${item.price} zł`;
-    cartItems.appendChild(li);
-    total += item.price;
-  });
-
-  cartTotal.innerHTML = `<strong>Razem: ${total} zł</strong>`;
-
-  // 🔹 aktualizacja licznika w pasku
-  const cartCount = document.getElementById("cartCount");
-  if (cartCount) {
-    cartCount.textContent = cart.length;
+  const existing = cart.find(item => item.id === id);
+  if (existing) {
+    existing.quantity++;
+  } else {
+    cart.push({ id, price, name, quantity: 1 });
   }
+  saveCart();
 }
 
+// Zapis i aktualizacja licznika koszyka
+function saveCart() {
+  sessionStorage.setItem("cart", JSON.stringify(cart));
+  updateCartCount();
+}
 
-// Pobierz produkty po załadowaniu strony
-window.addEventListener('DOMContentLoaded', fetchProducts);
+// Aktualizacja licznika w pasku
+function updateCartCount() {
+  const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+  if (cartCount) cartCount.textContent = totalItems;
+}
+
+// Inicjalizacja przy załadowaniu strony
+window.addEventListener("DOMContentLoaded", () => {
+  fetchProducts();
+  updateCartCount();
+});

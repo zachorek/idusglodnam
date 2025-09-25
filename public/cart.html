@@ -1,10 +1,51 @@
 <!DOCTYPE html>
+<html lang="pl">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Twój koszyk</title>
+  <title>Koszyk - Chachor Piecze</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    To jest twój koszyk
+  <nav class="navbar">
+    <ul class="nav-links">
+      <li><a href="/index">Zamów</a></li>
+      <li><a href="/availability">Dostępność i odbiory</a></li>
+      <li><a href="/about">O nas</a></li>
+    </ul>
+    <a href="/cart" class="cart">
+      🛒 Koszyk <span id="cartCount">0</span>
+    </a>
+  </nav>
+
+  <header class="hero">
+    <h1>Twój koszyk</h1>
+  </header>
+
+  <section class="cart-page">
+    <div id="cartItems"></div>
+    <p id="cartTotal"><strong>Razem: 0 zł</strong></p>
+
+    <h2>Dane do zamówienia</h2>
+    <form id="orderForm">
+      <input type="email" id="email" placeholder="Twój email" required><br>
+      <input type="tel" id="phone" placeholder="Twój telefon" required><br>
+      <textarea id="comment" placeholder="Komentarz do zamówienia"></textarea><br>
+
+      <label>
+        <input type="radio" name="payment" value="place" checked>
+        Płatność na miejscu
+      </label>
+      <label>
+        <input type="radio" name="payment" value="online">
+        Płatność przez internet
+      </label><br><br>
+
+      <button type="submit">Złóż zamówienie</button>
+    </form>
+    <div id="orderMessage"></div>
+  </section>
+
+  <script src="cart.js"></script>
 </body>
+</html>

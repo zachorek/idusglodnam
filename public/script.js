@@ -33,14 +33,23 @@ function addToCart(id, price, name) {
 function renderCart() {
   cartItems.innerHTML = "";
   let total = 0;
+
   cart.forEach(item => {
     const li = document.createElement("li");
     li.textContent = `${item.name} - ${item.price} zł`;
     cartItems.appendChild(li);
     total += item.price;
   });
+
   cartTotal.innerHTML = `<strong>Razem: ${total} zł</strong>`;
+
+  // 🔹 aktualizacja licznika w pasku
+  const cartCount = document.getElementById("cartCount");
+  if (cartCount) {
+    cartCount.textContent = cart.length;
+  }
 }
+
 
 // Pobierz produkty po załadowaniu strony
 window.addEventListener('DOMContentLoaded', fetchProducts);

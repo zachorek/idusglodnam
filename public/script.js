@@ -1,4 +1,7 @@
 const productGrid = document.getElementById("productGrid");
+if (productGrid) {
+  fetchProducts();
+}
 
 // Koszyk klienta w sesji
 let cart = JSON.parse(sessionStorage.getItem("cart")) || [];

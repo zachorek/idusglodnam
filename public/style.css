@@ -16,40 +16,39 @@ body {
 .navbar {
   display: flex;
   align-items: center;
-  justify-content: space-between; /* rozstawia lewa - środek - prawa */
-  padding: 0;
-  background-color: #FFFFFF;
-  border-bottom: 1px solid #FFFFFF;
-  position: sticky;
-  top: 0;
-  z-index: 1000;
+  justify-content: space-between; /* rozstawienie na 3 części */
+  padding: 10px 30px;
 }
 
+
+.nav-left,
+.nav-right {
+  flex: 1; /* zajmują równą przestrzeń po bokach */
+  display: flex;
+  align-items: center;
+}
 
 .nav-left {
-  display: flex;
-  align-items: center; /* środkowanie w pionie */
-  gap: 10px;           /* odstęp między logo a podpisem */
+  justify-content: flex-start; /* logo + podpis przyklejone do lewej */
+  gap: 10px;
 }
 
+
 .nav-right {
-  flex: 1; /* rezerwuje miejsce po prawej */
-  display: flex;
-  justify-content: flex-end;
+  justify-content: flex-end; /* koszyk przyklejony do prawej */
 }
 
 
 /* Linki w centrum */
 .nav-links {
-  list-style: none;
+  flex: 2; /* środek ma więcej miejsca */
   display: flex;
+  justify-content: center; /* linki centralnie */
   gap: 30px;
+  list-style: none;
   margin: 0;
   padding: 0;
-  flex: 2; /* środkowa część */
-  justify-content: center; /* linki na środku */
 }
-
 .nav-links a {
   text-decoration: none;
   color: #333;

@@ -15,16 +15,27 @@ body {
 
 .navbar {
   display: flex;
-  justify-content: center;   /* środek będzie bazą */
   align-items: center;
-  position: relative;        /* pozwoli ustawić koszyk absolutnie */
-  padding: 15px 30px;
+  justify-content: space-between; /* rozstawia lewa - środek - prawa */
+  padding: 0;
   background-color: #FFFFFF;
   border-bottom: 1px solid #FFFFFF;
   position: sticky;
   top: 0;
   z-index: 1000;
 }
+
+
+.nav-left {
+  flex: 1; /* rezerwuje miejsce po lewej */
+}
+
+.nav-right {
+  flex: 1; /* rezerwuje miejsce po prawej */
+  display: flex;
+  justify-content: flex-end;
+}
+
 
 /* Linki w centrum */
 .nav-links {
@@ -33,6 +44,8 @@ body {
   gap: 30px;
   margin: 0;
   padding: 0;
+  flex: 2; /* środkowa część */
+  justify-content: center; /* linki na środku */
 }
 
 .nav-links a {
@@ -170,4 +183,9 @@ body {
   max-width: 600px;
   margin: 0 auto;
   color: #555;
+}
+
+.logo_top_left_corner {
+  display: block;
+  height: 100px;
 }

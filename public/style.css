@@ -33,6 +33,14 @@ body {
   gap: 10px;
 }
 
+.nav-left a {
+  display: flex;
+  align-items: center;
+  gap: 10px; /* odstęp między logo a podpisem */
+  text-decoration: none; /* usunięcie podkreślenia linku */
+}
+
+
 
 .nav-right {
   justify-content: flex-end; /* koszyk przyklejony do prawej */

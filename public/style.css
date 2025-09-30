@@ -27,7 +27,9 @@ body {
 
 
 .nav-left {
-  flex: 1; /* rezerwuje miejsce po lewej */
+  display: flex;
+  align-items: center; /* środkowanie w pionie */
+  gap: 10px;           /* odstęp między logo a podpisem */
 }
 
 .nav-right {
@@ -188,4 +190,7 @@ body {
 .logo_top_left_corner {
   display: block;
   height: 100px;
+}
+.name_top_left_corner {
+  height: 50px;
 }

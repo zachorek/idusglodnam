@@ -201,3 +201,34 @@ body {
 .name_top_left_corner {
   height: 50px;
 }
+
+@media (max-width: 768px) {
+  .navbar {
+    flex-direction: column;      /* zamiast w jednej linii – w kolumnie */
+    align-items: center;
+    gap: 10px;
+  }
+
+  .nav-left {
+    justify-content: center;     /* logo + podpis na środku */
+  }
+
+  .nav-links {
+    flex: none;                  /* zdejmujemy "rozciąganie" */
+    justify-content: center;
+    flex-wrap: wrap;             /* linki mogą się zawijać w drugiej linii */
+    gap: 15px;
+  }
+
+  .nav-right {
+    justify-content: center;     /* koszyk pod spodem, wyśrodkowany */
+  }
+
+  .logo_top_left_corner {
+    height: 40px;                /* mniejsze logo na telefonie */
+  }
+
+  .name_top_left_corner {
+    height: 60px;                /* proporcjonalnie mniejszy podpis */
+  }
+}

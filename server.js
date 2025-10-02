@@ -20,7 +20,12 @@ mongoose.connect(process.env.MONGO_URI)
 const Product = mongoose.model('Product', new mongoose.Schema({
   name: String,
   price: Number,
-  desc: String
+  desc: String,
+  category: { type: String, required: true }
+}));
+
+const Category = mongoose.model('Category', new mongoose.Schema({
+  name: { type: String, required: true }
 }));
 
 // API ENDPOINTY
@@ -45,6 +50,37 @@ app.post('/api/products', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Błąd dodawania produktu' });
+  }
+});
+
+// Pobierz wszystkie kategorie
+app.get('/api/categories', async (req, res) => {
+  try {
+    const categories = await Category.find();
+    res.json(categories);
+  } catch (err) {
+    res.status(500).json({ error: 'Błąd pobierania kategorii' });
+  }
+});
+
+// Dodaj kategorię
+app.post('/api/categories', async (req, res) => {
+  try {
+    const category = new Category(req.body);
+    await category.save();
+    res.json(category);
+  } catch (err) {
+    res.status(500).json({ error: 'Błąd dodawania kategorii' });
+  }
+});
+
+// Usuń kategorię
+app.delete('/api/categories/:id', async (req, res) => {
+  try {
+    await Category.findByIdAndDelete(req.params.id);
+    res.json({ message: 'Kategoria usunięta' });
+  } catch (err) {
+    res.status(500).json({ error: 'Błąd usuwania kategorii' });
   }
 });
 

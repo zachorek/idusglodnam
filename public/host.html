@@ -25,15 +25,29 @@
     <h1>Panel Host</h1>
     <p>Dodawaj nowe produkty do sklepu</p>
   </header>
-  
+
   <section class="host-section">
     <form id="hostForm">
       <input type="text" id="name" placeholder="Nazwa produktu" required>
       <input type="number" id="price" placeholder="Cena" required>
       <input type="text" id="desc" placeholder="Opis produktu" required>
+      <select id="categorySelect" required>
+        <option value="">-- Wybierz kategorię --</option>
+      </select>
       <button type="submit">Dodaj produkt</button>
     </form>
     <div id="hostMessage"></div>
+  </section>
+
+  <section id="categoriesSection">
+    <h2>Kategorie</h2>
+    <form id="categoryForm">
+      <input type="text" id="categoryName" placeholder="Nazwa kategorii" required>
+      <button type="submit">Dodaj kategorię</button>
+    </form>
+    <div id="categoryMessage"></div>
+
+    <div id="categoryList"></div>
   </section>
 
   <section id="products" class="products-section">

@@ -255,3 +255,35 @@ body {
 .product-card .delete-btn:hover {
   background: #c0392b !important;
 }
+
+#categoriesSection {
+  margin-top: 30px;
+  padding: 20px;
+  background: #f9f9f9;
+  border-radius: 12px;
+}
+
+.category-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #fff;
+  padding: 8px 12px;
+  border-radius: 8px;
+  margin-top: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.category-item button {
+  background: #e74c3c;
+  border: none;
+  color: white;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.category-item button:hover {
+  background: #c0392b;
+}
+

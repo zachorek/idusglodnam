@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <title>Logowanie hosta</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <section class="login-section">
+    <h1>Logowanie hosta</h1>
+    <input type="password" id="hostPassword" placeholder="Podaj hasło">
+    <button onclick="loginHost()">Zaloguj</button>
+    <div id="loginMessage"></div>
+  </section>
+
+  <script>
+    async function loginHost() {
+      const password = document.getElementById("hostPassword").value;
+
+      const res = await fetch('/api/login-host', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        sessionStorage.setItem("isHostLogged", "true"); // zapamiętanie sesji
+        window.location.href = "/host"; // przejście do panelu
+      } else {
+        document.getElementById("loginMessage").innerText = "Błędne hasło!";
+      }
+    }
+  </script>
+</body>
+</html>

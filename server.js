@@ -104,6 +104,15 @@ app.delete('/api/products/:id', async (req, res) => {
   }
 });
 
+app.post('/api/login-host', (req, res) => {
+  const { password } = req.body;
+  if (password === process.env.HOST_PASSWORD) {
+    res.json({ success: true });
+  } else {
+    res.status(401).json({ success: false, message: "Nieprawidłowe hasło" });
+  }
+});
+
 // -------------------------
 
 // Start serwera

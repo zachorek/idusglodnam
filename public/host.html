@@ -7,6 +7,12 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <script>
+    if (sessionStorage.getItem("isHostLogged") !== "true") {
+      window.location.href = "/host-login";
+    }
+  </script>
+
   <nav class="navbar">
     <ul class="nav-links">
       <li><a href="/index">Zamów</a></li>
@@ -19,7 +25,7 @@
     <h1>Panel Host</h1>
     <p>Dodawaj nowe produkty do sklepu</p>
   </header>
-
+  
   <section class="host-section">
     <form id="hostForm">
       <input type="text" id="name" placeholder="Nazwa produktu" required>

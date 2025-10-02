@@ -1,5 +1,9 @@
 const hostForm = document.getElementById("hostForm");
 const hostMessage = document.getElementById("hostMessage");
+const productGrid = document.getElementById("productGrid");
+if (productGrid) {
+  fetchProducts();
+}
 
 hostForm.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -23,3 +27,25 @@ hostForm.addEventListener("submit", async (e) => {
     hostMessage.innerHTML = `<p style="color:red">Błąd dodawania produktu</p>`;
   }
 });
+
+async function fetchProducts() {
+  try {
+    const res = await fetch('/api/products');
+    const products = await res.json();
+
+    productGrid.innerHTML = "";
+    products.forEach(p => {
+      const card = document.createElement("div");
+      card.classList.add("product-card");
+      card.innerHTML = `
+        <h3>${p.name}</h3>
+        <p>${p.desc}</p>
+        <p><strong>${p.price} zł</strong></p>
+        <button onclick="addToCart('${p._id}', ${p.price}, '${p.name}')">Dodaj do koszyka</button>
+      `;
+      productGrid.appendChild(card);
+    });
+  } catch (err) {
+    console.error('Błąd pobierania produktów:', err);
+  }
+}

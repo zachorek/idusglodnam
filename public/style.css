@@ -263,27 +263,82 @@ body {
   border-radius: 12px;
 }
 
+.category-container {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+  margin-top: 20px;
+}
+
+.category-group {
+  text-align: left;
+}
+
+.category-title {
+  font-size: 1.6rem;
+  margin-bottom: 16px;
+  color: #444;
+}
+
+.category-products {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 20px;
+}
+
+.empty-state,
+.error-message {
+  margin-top: 20px;
+  font-size: 1rem;
+}
+
+.error-message {
+  color: #d64545;
+}
+
+#categoryList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 15px;
+}
+
 .category-item {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  background: #fff;
+  justify-content: space-between;
+  gap: 12px;
   padding: 8px 12px;
   border-radius: 8px;
-  margin-top: 8px;
+  background: #fff;
   box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 }
 
-.category-item button {
-  background: #e74c3c;
-  border: none;
-  color: white;
-  padding: 4px 10px;
+.category-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.category-actions button {
+  padding: 4px 8px;
   border-radius: 6px;
+  border: 1px solid #ddd;
+  background-color: #fff;
   cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
-.category-item button:hover {
-  background: #c0392b;
+.category-actions button:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
+.category-actions .delete-category {
+  border-color: #e67e22;
+  color: #e67e22;
+}
+
+.category-actions .delete-category:hover {
+  background-color: #e67e22;
+  color: #fff;
+}

@@ -25,7 +25,8 @@ const Product = mongoose.model('Product', new mongoose.Schema({
 }));
 
 const Category = mongoose.model('Category', new mongoose.Schema({
-  name: { type: String, required: true }
+  name: { type: String, required: true },
+  order: { type: Number, default: 0 }
 }));
 
 // API ENDPOINTY
@@ -56,7 +57,7 @@ app.post('/api/products', async (req, res) => {
 // Pobierz wszystkie kategorie
 app.get('/api/categories', async (req, res) => {
   try {
-    const categories = await Category.find();
+    const categories = await Category.find().sort({ order: 1, name: 1 });
     res.json(categories);
   } catch (err) {
     res.status(500).json({ error: 'Błąd pobierania kategorii' });
@@ -66,7 +67,10 @@ app.get('/api/categories', async (req, res) => {
 // Dodaj kategorię
 app.post('/api/categories', async (req, res) => {
   try {
-    const category = new Category(req.body);
+    const { name } = req.body;
+    const lastCategory = await Category.findOne({ order: { $ne: null } }).sort({ order: -1 });
+    const nextOrder = lastCategory && typeof lastCategory.order === 'number' ? lastCategory.order + 1 : 0;
+    const category = new Category({ name, order: nextOrder });
     await category.save();
     res.json(category);
   } catch (err) {
@@ -81,6 +85,33 @@ app.delete('/api/categories/:id', async (req, res) => {
     res.json({ message: 'Kategoria usunięta' });
   } catch (err) {
     res.status(500).json({ error: 'Błąd usuwania kategorii' });
+  }
+});
+
+app.put('/api/categories/reorder', async (req, res) => {
+  const { order } = req.body;
+
+  if (!Array.isArray(order)) {
+    return res.status(400).json({ error: 'Nieprawidłowy format kolejności kategorii' });
+  }
+
+  try {
+    const bulkOps = order.map((id, index) => ({
+      updateOne: {
+        filter: { _id: id },
+        update: { $set: { order: index } }
+      }
+    }));
+
+    if (bulkOps.length) {
+      await Category.bulkWrite(bulkOps);
+    }
+
+    const categories = await Category.find().sort({ order: 1, name: 1 });
+    res.json(categories);
+  } catch (err) {
+    console.error('Błąd zmiany kolejności kategorii:', err);
+    res.status(500).json({ error: 'Błąd zmiany kolejności kategorii' });
   }
 });
 

@@ -246,3 +246,12 @@ body {
 .delete-btn:hover {
   background: #c0392b;
 }
+
+.product-card .delete-btn {
+  background: #e74c3c !important;
+  color: #fff !important;
+}
+
+.product-card .delete-btn:hover {
+  background: #c0392b !important;
+}

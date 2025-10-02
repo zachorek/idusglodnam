@@ -41,7 +41,7 @@ async function fetchProducts() {
         <h3>${p.name}</h3>
         <p>${p.desc}</p>
         <p><strong>${p.price} zł</strong></p>
-        <button onclick="addToCart('${p._id}', ${p.price}, '${p.name}')">Dodaj do koszyka</button>
+        <button class="delete-btn" data-id="${p._id}">Usuń</button>
       `;
       productGrid.appendChild(card);
     });
@@ -49,3 +49,21 @@ async function fetchProducts() {
     console.error('Błąd pobierania produktów:', err);
   }
 }
+// Obsługa usuwania produktu
+document.addEventListener('click', async (e) => {
+  if (e.target.classList.contains('delete-btn')) {
+    const id = e.target.getAttribute('data-id');
+
+    if (confirm('Na pewno chcesz usunąć ten produkt?')) {
+      const res = await fetch(`/api/products/${id}`, {
+        method: 'DELETE'
+      });
+
+      if (res.ok) {
+        fetchProducts(); // odśwież listę
+      } else {
+        alert('❌ Błąd podczas usuwania produktu');
+      }
+    }
+  }
+});

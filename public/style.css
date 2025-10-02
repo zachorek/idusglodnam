@@ -232,3 +232,17 @@ body {
     height: 60px;                /* proporcjonalnie mniejszy podpis */
   }
 }
+
+.delete-btn {
+  background: #e74c3c;
+  border: none;
+  color: white;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-top: 10px;
+}
+
+.delete-btn:hover {
+  background: #c0392b;
+}

@@ -93,6 +93,17 @@ app.post("/api/orders", async (req, res) => {
   }
 });
 
+// Usuń produkt
+app.delete('/api/products/:id', async (req, res) => {
+  try {
+    await Product.findByIdAndDelete(req.params.id);
+    res.json({ message: '✅ Produkt usunięty' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: '❌ Błąd usuwania produktu' });
+  }
+});
+
 // -------------------------
 
 // Start serwera

@@ -27,13 +27,14 @@
   </header>
 
   <section class="host-section">
-    <form id="hostForm">
+    <form id="hostForm" enctype="multipart/form-data">
       <input type="text" id="name" placeholder="Nazwa produktu" required>
       <input type="number" id="price" placeholder="Cena" required>
       <input type="text" id="desc" placeholder="Opis produktu" required>
       <select id="categorySelect" required>
         <option value="">-- Wybierz kategorię --</option>
       </select>
+      <input type="file" id="image" accept="image/*" required>
       <button type="submit">Dodaj produkt</button>
     </form>
     <div id="hostMessage"></div>

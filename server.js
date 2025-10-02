@@ -1,10 +1,24 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const path = require('path');
+const multer = require('multer');
 require('dotenv').config();
 
 const app = express();
 const port = process.env.PORT || 3000;
+
+const storage = multer.memoryStorage();
+
+const upload = multer({
+  storage,
+  fileFilter: (req, file, cb) => {
+    if (!file.mimetype.startsWith('image/')) {
+      req.fileValidationError = 'Dozwolone są tylko pliki graficzne';
+      return cb(null, false);
+    }
+    cb(null, true);
+  }
+});
 
 // Middleware
 app.use(express.json());
@@ -21,7 +35,9 @@ const Product = mongoose.model('Product', new mongoose.Schema({
   name: String,
   price: Number,
   desc: String,
-  category: { type: String, required: true }
+  category: { type: String, required: true },
+  imageData: String,
+  imageUrl: String
 }));
 
 const Category = mongoose.model('Category', new mongoose.Schema({
@@ -42,10 +58,38 @@ app.get('/api/products', async (req, res) => {
 });
 
 // Dodaj nowy produkt
-app.post('/api/products', async (req, res) => {
-  console.log('BODY z frontendu:', req.body);
+app.post('/api/products', upload.single('image'), async (req, res) => {
   try {
-    const product = new Product(req.body);
+    const { name, price, desc, category } = req.body;
+
+    if (req.fileValidationError) {
+      return res.status(400).json({ error: req.fileValidationError });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'Zdjęcie produktu jest wymagane' });
+    }
+
+    if (!name || !desc || !category) {
+      return res.status(400).json({ error: 'Wszystkie pola produktu są wymagane' });
+    }
+
+    const numericPrice = Number(price);
+    if (Number.isNaN(numericPrice)) {
+      return res.status(400).json({ error: 'Nieprawidłowa cena' });
+    }
+
+    const base64Image = req.file.buffer.toString('base64');
+    const imageData = `data:${req.file.mimetype};base64,${base64Image}`;
+
+    const product = new Product({
+      name: name ? name.trim() : name,
+      price: numericPrice,
+      desc: desc ? desc.trim() : desc,
+      category,
+      imageData
+    });
+
     await product.save();
     res.json(product);
   } catch (err) {
@@ -163,7 +207,12 @@ app.post("/api/orders", async (req, res) => {
 // Usuń produkt
 app.delete('/api/products/:id', async (req, res) => {
   try {
-    await Product.findByIdAndDelete(req.params.id);
+    const product = await Product.findById(req.params.id);
+    if (!product) {
+      return res.status(404).json({ error: 'Produkt nie istnieje' });
+    }
+
+    await product.deleteOne();
     res.json({ message: '✅ Produkt usunięty' });
   } catch (err) {
     console.error(err);

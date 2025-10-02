@@ -5,6 +5,7 @@ const categoryForm = document.getElementById("categoryForm");
 const categoryMessage = document.getElementById("categoryMessage");
 const categoryList = document.getElementById("categoryList");
 const categorySelect = document.getElementById("categorySelect");
+const imageInput = document.getElementById("image");
 
 let categoriesCache = [];
 
@@ -57,34 +58,62 @@ if (hostForm) {
   hostForm.addEventListener("submit", async (e) => {
     e.preventDefault();
 
-    const name = document.getElementById("name").value;
-    const price = parseFloat(document.getElementById("price").value);
-    const desc = document.getElementById("desc").value;
+    const name = document.getElementById("name").value.trim();
+    const priceValue = document.getElementById("price").value;
+    const desc = document.getElementById("desc").value.trim();
     const category = categorySelect ? categorySelect.value : '';
+    const imageFile = imageInput && imageInput.files ? imageInput.files[0] : null;
+
+    if (!imageFile) {
+      hostMessage.innerHTML = '<p style="color:red">Dodaj zdjęcie produktu</p>';
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('name', name);
+    formData.append('price', priceValue);
+    formData.append('desc', desc);
+    formData.append('category', category);
+    formData.append('image', imageFile);
 
     try {
       const res = await fetch('/api/products', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, price, desc, category })
+        body: formData
       });
 
-      if (!res.ok) {
-        throw new Error('Błąd odpowiedzi serwera');
+      let data = null;
+      try {
+        data = await res.json();
+      } catch (parseErr) {
+        data = null;
       }
 
-      const data = await res.json();
+      if (!res.ok) {
+        const message = data && data.error ? data.error : 'Błąd dodawania produktu';
+        throw new Error(message);
+      }
+
+      if (!data) {
+        throw new Error('Nieoczekiwany błąd serwera');
+      }
+
       hostMessage.innerHTML = `<p style="color:green">Produkt "${data.name}" został dodany!</p>`;
       hostForm.reset();
+      if (imageInput) {
+        imageInput.value = '';
+      }
       if (productGrid) {
         fetchProducts();
       }
     } catch (err) {
       console.error(err);
-      hostMessage.innerHTML = '<p style="color:red">Błąd dodawania produktu</p>';
+      const message = err && err.message ? err.message : 'Błąd dodawania produktu';
+      hostMessage.innerHTML = `<p style="color:red">${message}</p>`;
     }
   });
 }
+
 
 async function fetchCategories() {
   try {
@@ -259,14 +288,18 @@ async function fetchProducts() {
 
     productGrid.innerHTML = '';
     products.forEach((product) => {
+      const imageSrc = product.imageData || product.imageUrl;
       const card = document.createElement('div');
       card.classList.add('product-card');
       card.innerHTML = `
-        <h3>${product.name}</h3>
-        <p>${product.desc}</p>
-        <p><strong>${product.price} zł</strong></p>
-        <p>Kategoria: <em>${product.category}</em></p>
-        <button class="delete-btn" data-id="${product._id}">Usuń</button>
+        ${imageSrc ? `<img src="${imageSrc}" alt="${product.name}" class="product-thumb">` : ''}
+        <div class="product-info">
+          <h3>${product.name}</h3>
+          <p>${product.desc}</p>
+          <p><strong>${product.price} zł</strong></p>
+          <p>Kategoria: <em>${product.category}</em></p>
+          <button class="delete-btn" data-id="${product._id}">Usuń</button>
+        </div>
       `;
       productGrid.appendChild(card);
     });

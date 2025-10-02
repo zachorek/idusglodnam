@@ -1,7 +1,33 @@
 const productGrid = document.getElementById('productGrid');
+const productModal = document.getElementById('productModal');
+const productModalBody = document.getElementById('productModalBody');
+const productModalClose = productModal ? productModal.querySelector('.modal-close') : null;
+
+let lastFocusedElement = null;
+
 if (productGrid) {
   productGrid.classList.remove('product-grid');
   productGrid.classList.add('category-container');
+}
+
+if (productModalClose) {
+  productModalClose.addEventListener('click', closeProductModal);
+}
+
+if (productModal) {
+  productModal.addEventListener('click', (event) => {
+    if (event.target === productModal) {
+      closeProductModal();
+    }
+  });
+}
+
+if (typeof document !== 'undefined') {
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && productModal && productModal.classList.contains('open')) {
+      closeProductModal();
+    }
+  });
 }
 
 let cart = JSON.parse(sessionStorage.getItem('cart')) || [];
@@ -95,22 +121,151 @@ function createCategorySection(title, items) {
 function createProductCard(product) {
   const card = document.createElement('div');
   card.classList.add('product-card');
+  card.setAttribute('tabindex', '0');
+  card.setAttribute('role', 'button');
+  card.setAttribute('aria-label', `Zobacz szczegóły produktu ${product.name || ''}`);
+
+  const imageSrc = product.imageData || product.imageUrl;
+  if (imageSrc) {
+    const image = document.createElement('img');
+    image.src = imageSrc;
+    image.alt = product.name || '';
+    image.classList.add('product-thumb');
+    card.appendChild(image);
+  }
+
+  const content = document.createElement('div');
+  content.classList.add('product-info');
 
   const title = document.createElement('h3');
   title.textContent = product.name;
 
   const desc = document.createElement('p');
-  desc.textContent = product.desc;
+  const descText = (product.desc || '').trim();
+  const previewLimit = 160;
+  let previewText = descText;
+  let truncated = false;
+
+  if (descText.length > previewLimit) {
+    const slice = descText.slice(0, previewLimit);
+    const lastSpace = slice.lastIndexOf(' ');
+    previewText = lastSpace > 0 ? slice.slice(0, lastSpace) : slice;
+    truncated = true;
+  }
+
+  desc.classList.add('product-desc');
+
+  if (truncated) {
+    desc.append(document.createTextNode(previewText + ' '));
+    const more = document.createElement('span');
+    more.classList.add('product-desc-more');
+    more.textContent = '… więcej';
+    desc.appendChild(more);
+  } else {
+    desc.textContent = previewText;
+  }
 
   const price = document.createElement('p');
   price.innerHTML = `<strong>${product.price} zł</strong>`;
 
   const button = document.createElement('button');
   button.textContent = 'Dodaj do koszyka';
-  button.addEventListener('click', () => addToCart(product._id, product.price, product.name));
+  button.addEventListener('click', (event) => {
+    event.stopPropagation();
+    addToCart(product._id, product.price, product.name);
+  });
 
-  card.append(title, desc, price, button);
+  content.append(title, desc, price, button);
+  card.appendChild(content);
+
+  card.addEventListener('click', () => openProductModal(product));
+  card.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      openProductModal(product);
+    }
+  });
+
   return card;
+}
+
+function openProductModal(product) {
+  if (!productModal || !productModalBody) {
+    return;
+  }
+
+  lastFocusedElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+
+  productModalBody.innerHTML = '';
+
+  const wrapper = document.createElement('div');
+  wrapper.classList.add('modal-product');
+
+  const imageSrc = product.imageData || product.imageUrl;
+  if (imageSrc) {
+    const image = document.createElement('img');
+    image.src = imageSrc;
+    image.alt = product.name || '';
+    wrapper.appendChild(image);
+  }
+
+  const info = document.createElement('div');
+  info.classList.add('modal-product-info');
+
+  const title = document.createElement('h3');
+  title.textContent = product.name;
+  info.appendChild(title);
+
+  if (product.desc) {
+    const desc = document.createElement('p');
+    desc.textContent = product.desc;
+    info.appendChild(desc);
+  }
+
+  const price = document.createElement('p');
+  price.innerHTML = `<strong>${product.price} zł</strong>`;
+  info.appendChild(price);
+
+  const button = document.createElement('button');
+  button.textContent = 'Dodaj do koszyka';
+  button.addEventListener('click', () => {
+    addToCart(product._id, product.price, product.name);
+    closeProductModal();
+  });
+  info.appendChild(button);
+
+  wrapper.appendChild(info);
+  productModalBody.appendChild(wrapper);
+
+  productModal.classList.add('open');
+  productModal.setAttribute('aria-hidden', 'false');
+
+  if (productModalClose) {
+    productModalClose.focus();
+  }
+}
+
+function closeProductModal() {
+  if (!productModal) {
+    return;
+  }
+
+  if (!productModal.classList.contains('open')) {
+    return;
+  }
+
+  if (productModalBody) {
+    productModalBody.innerHTML = '';
+  }
+
+  productModal.classList.remove('open');
+  productModal.setAttribute('aria-hidden', 'true');
+
+  if (lastFocusedElement && typeof lastFocusedElement.focus === 'function') {
+    lastFocusedElement.focus();
+  }
+
+  lastFocusedElement = null;
 }
 
 function addToCart(id, price, name) {

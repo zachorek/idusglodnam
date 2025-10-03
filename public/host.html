@@ -60,6 +60,28 @@
     <div id="availabilityMessage" class="availability-message"></div>
   </section>
 
+  <section class="host-discount-section glass-panel">
+    <div class="host-discount-header">
+      <h2>Kody rabatowe</h2>
+      <p>Utwórz kod i przypisz procent rabatu, aby klienci mogli go wykorzystać w koszyku.</p>
+    </div>
+
+    <form id="discountForm" class="discount-form">
+      <div class="discount-form-row">
+        <label class="discount-field" for="discountCode">Kod</label>
+        <input type="text" id="discountCode" placeholder="np. SMAK20" maxlength="40" required>
+      </div>
+      <div class="discount-form-row">
+        <label class="discount-field" for="discountPercent">Rabat (%)</label>
+        <input type="number" id="discountPercent" min="1" max="100" step="1" placeholder="np. 15" required>
+      </div>
+      <button type="submit">Dodaj kod</button>
+    </form>
+    <div id="discountMessage" class="discount-message" aria-live="polite"></div>
+
+    <div id="discountList" class="discount-list"></div>
+  </section>
+
   <section id="products" class="products-section">
   <h2>Dostępne wypieki</h2>
   <div id="productGrid" class="product-grid"></div>

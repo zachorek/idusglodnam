@@ -44,8 +44,30 @@
     <aside class="cart-summary-panel glass-panel">
       <div class="cart-summary-card">
         <div class="cart-summary-header">
-          <span>Razem</span>
+          <span>Łączna wartość</span>
           <span id="cartTotal" class="cart-total-amount">0 zł</span>
+        </div>
+
+        <div id="cartDiscountRow" class="cart-summary-row cart-summary-discount hidden">
+          <span id="cartDiscountLabel">Rabat</span>
+          <span id="cartDiscountAmount">-0 zł</span>
+        </div>
+
+        <div class="cart-summary-header cart-summary-final">
+          <span>Do zapłaty</span>
+          <span id="cartFinalTotal" class="cart-total-amount">0 zł</span>
+        </div>
+
+        <div class="cart-summary-divider"></div>
+
+        <div class="cart-discount-box">
+          <label for="discountCodeInput">Masz kod rabatowy?</label>
+          <div class="cart-discount-input">
+            <input type="text" id="discountCodeInput" placeholder="Wpisz kod" autocomplete="off" inputmode="text" spellcheck="false">
+            <button type="button" id="applyDiscountButton">Zastosuj</button>
+            <button type="button" id="removeDiscountButton" class="cart-discount-remove hidden">Usuń</button>
+          </div>
+          <p id="discountFeedback" class="cart-discount-feedback" aria-live="polite"></p>
         </div>
         <div class="cart-summary-divider"></div>
       </div>

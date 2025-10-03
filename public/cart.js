@@ -5,8 +5,24 @@ const cartItems = document.getElementById("cartItems");
 const cartTotal = document.getElementById("cartTotal");
 const cartCount = document.getElementById("cartCount");
 const orderMessage = document.getElementById("orderMessage");
+const cartDiscountRow = document.getElementById("cartDiscountRow");
+const cartDiscountLabel = document.getElementById("cartDiscountLabel");
+const cartDiscountAmount = document.getElementById("cartDiscountAmount");
+const cartFinalTotal = document.getElementById("cartFinalTotal");
+const discountCodeInputEl = document.getElementById("discountCodeInput");
+const applyDiscountButton = document.getElementById("applyDiscountButton");
+const removeDiscountButton = document.getElementById("removeDiscountButton");
+const discountFeedback = document.getElementById("discountFeedback");
 
 const currencyFormatter = new Intl.NumberFormat('pl-PL', { style: 'currency', currency: 'PLN' });
+
+let availableDiscountCodes = [];
+let activeDiscount = null;
+let lastSummaryTotals = {
+  totalBeforeDiscount: 0,
+  discountAmount: 0,
+  totalAfterDiscount: 0
+};
 
 function parsePrice(value) {
   if (typeof value === 'number') {
@@ -50,6 +66,206 @@ function showOrderMessage(type, message) {
   });
 }
 
+function showDiscountFeedback(type, message) {
+  if (!discountFeedback) {
+    return;
+  }
+  discountFeedback.classList.remove('success', 'error');
+  if (type) {
+    discountFeedback.classList.add(type);
+  }
+  discountFeedback.textContent = message;
+}
+
+function storeActiveDiscount() {
+  if (activeDiscount) {
+    sessionStorage.setItem('cartDiscount', JSON.stringify(activeDiscount));
+  } else {
+    sessionStorage.removeItem('cartDiscount');
+  }
+}
+
+async function loadDiscountCodes() {
+  try {
+    showDiscountFeedback('', '');
+    const res = await fetch('/api/discount-codes');
+    if (!res.ok) {
+      throw new Error('Błąd odpowiedzi serwera');
+    }
+
+    availableDiscountCodes = await res.json();
+    restoreDiscountFromStorage();
+  } catch (error) {
+    console.error('Błąd pobierania kodów rabatowych:', error);
+    availableDiscountCodes = [];
+    showDiscountFeedback('error', 'Nie udało się pobrać kodów rabatowych.');
+    removeActiveDiscount({ silent: true });
+  }
+}
+
+function normalizeDiscountInput(value) {
+  return (value || '').trim().replace(/\s+/g, '').toUpperCase();
+}
+
+function applyDiscount(codeValue) {
+  showDiscountFeedback('', '');
+  const normalized = normalizeDiscountInput(codeValue);
+  if (!normalized) {
+    showDiscountFeedback('error', 'Wpisz kod rabatowy.');
+    return;
+  }
+
+  const match = availableDiscountCodes.find((item) => item && typeof item.code === 'string' && item.code.toUpperCase() === normalized);
+
+  if (!match) {
+    showDiscountFeedback('error', 'Nieprawidłowy kod rabatowy.');
+    return;
+  }
+
+  const percent = Number(match.percent);
+  if (!Number.isFinite(percent) || percent <= 0) {
+    showDiscountFeedback('error', 'Kod rabatowy jest nieaktywny.');
+    return;
+  }
+
+  activeDiscount = {
+    code: match.code.toUpperCase(),
+    percent
+  };
+  storeActiveDiscount();
+  updateSummaryTotals(lastSummaryTotals.totalBeforeDiscount);
+  if (discountCodeInputEl) {
+    discountCodeInputEl.value = activeDiscount.code;
+  }
+  if (removeDiscountButton) {
+    removeDiscountButton.classList.remove('hidden');
+  }
+  showDiscountFeedback('success', `Zastosowano kod ${activeDiscount.code}.`);
+}
+
+function removeActiveDiscount(options = {}) {
+  const hadDiscount = !!(activeDiscount && activeDiscount.code);
+  activeDiscount = null;
+  storeActiveDiscount();
+  updateSummaryTotals(lastSummaryTotals.totalBeforeDiscount);
+  if (discountCodeInputEl) {
+    discountCodeInputEl.value = '';
+  }
+  if (removeDiscountButton) {
+    removeDiscountButton.classList.add('hidden');
+  }
+  if (hadDiscount && !options.silent) {
+    showDiscountFeedback('success', 'Kod rabatowy został usunięty.');
+  }
+}
+
+if (applyDiscountButton) {
+  applyDiscountButton.addEventListener('click', () => {
+    applyDiscount(discountCodeInputEl ? discountCodeInputEl.value : '');
+  });
+}
+
+if (discountCodeInputEl) {
+  discountCodeInputEl.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      applyDiscount(discountCodeInputEl.value);
+    }
+  });
+}
+
+if (removeDiscountButton) {
+  removeDiscountButton.addEventListener('click', () => {
+    removeActiveDiscount();
+  });
+}
+
+function restoreDiscountFromStorage() {
+  const stored = sessionStorage.getItem('cartDiscount');
+  if (!stored) {
+    return;
+  }
+
+  try {
+    const parsed = JSON.parse(stored);
+    if (parsed && parsed.code) {
+      const match = availableDiscountCodes.find((item) => item && typeof item.code === 'string' && item.code.toUpperCase() === parsed.code.toUpperCase());
+      if (match) {
+        activeDiscount = {
+          code: match.code.toUpperCase(),
+          percent: Number(match.percent)
+        };
+        storeActiveDiscount();
+        if (discountCodeInputEl) {
+          discountCodeInputEl.value = activeDiscount.code;
+        }
+        if (removeDiscountButton) {
+          removeDiscountButton.classList.remove('hidden');
+        }
+        showDiscountFeedback('success', `Zastosowano kod ${activeDiscount.code}.`);
+        updateSummaryTotals(lastSummaryTotals.totalBeforeDiscount);
+        return;
+      }
+    }
+  } catch (err) {
+    console.warn('Nie udało się odczytać zapisanego kodu rabatowego:', err);
+  }
+
+  sessionStorage.removeItem('cartDiscount');
+  activeDiscount = null;
+  updateSummaryTotals(lastSummaryTotals.totalBeforeDiscount);
+}
+
+function updateSummaryTotals(totalBeforeDiscount) {
+  lastSummaryTotals.totalBeforeDiscount = totalBeforeDiscount;
+  let discountAmount = 0;
+  let finalTotal = totalBeforeDiscount;
+
+  const hasPositiveTotal = totalBeforeDiscount > 0;
+
+  if (hasPositiveTotal && activeDiscount && Number.isFinite(activeDiscount.percent) && activeDiscount.percent > 0) {
+    discountAmount = Number((totalBeforeDiscount * activeDiscount.percent / 100).toFixed(2));
+    finalTotal = Math.max(0, Number((totalBeforeDiscount - discountAmount).toFixed(2)));
+
+    if (cartDiscountRow) {
+      cartDiscountRow.classList.remove('hidden');
+    }
+    if (cartDiscountLabel && activeDiscount) {
+      cartDiscountLabel.textContent = `Rabat (${activeDiscount.percent}% - ${activeDiscount.code})`;
+    }
+    if (cartDiscountAmount) {
+      cartDiscountAmount.textContent = `-${formatPrice(discountAmount)}`;
+    }
+    if (removeDiscountButton) {
+      removeDiscountButton.classList.remove('hidden');
+    }
+  } else {
+    if (cartDiscountRow) {
+      cartDiscountRow.classList.add('hidden');
+    }
+    if (removeDiscountButton) {
+      removeDiscountButton.classList.add('hidden');
+    }
+    if (cartDiscountAmount) {
+      cartDiscountAmount.textContent = `-${formatPrice(0)}`;
+    }
+    if (cartDiscountLabel) {
+      cartDiscountLabel.textContent = 'Rabat';
+    }
+  }
+
+  lastSummaryTotals.discountAmount = discountAmount;
+  lastSummaryTotals.totalAfterDiscount = finalTotal;
+
+  if (cartTotal) {
+    cartTotal.textContent = formatPrice(totalBeforeDiscount);
+  }
+  if (cartFinalTotal) {
+    cartFinalTotal.textContent = formatPrice(finalTotal);
+    triggerPulse(cartFinalTotal, 'pulse');
+  }
+}
+
 // Zapis koszyka w sessionStorage i aktualizacja widoku
 function saveCart() {
   sessionStorage.setItem("cart", JSON.stringify(cart));
@@ -82,10 +298,7 @@ function updateCart() {
         <a class="cart-empty-action" href="/index">Wróć do zakupów</a>
       </div>
     `;
-    if (cartTotal) {
-      cartTotal.textContent = formatPrice(0);
-      cartTotal.classList.remove('pulse');
-    }
+    updateSummaryTotals(0);
     return;
   }
 
@@ -117,10 +330,7 @@ function updateCart() {
     cartItems.appendChild(card);
   });
 
-  if (cartTotal) {
-    cartTotal.textContent = formatPrice(total);
-    triggerPulse(cartTotal, 'pulse');
-  }
+  updateSummaryTotals(total);
 }
 
 // Zmiana ilości produktu
@@ -168,7 +378,12 @@ if (orderForm) {
       phone,
       comment,
       payment,
-      products: cart
+      products: cart,
+      discountCode: activeDiscount ? activeDiscount.code : '',
+      discountPercent: activeDiscount ? activeDiscount.percent : 0,
+      discountAmount: lastSummaryTotals.discountAmount,
+      totalBeforeDiscount: lastSummaryTotals.totalBeforeDiscount,
+      totalAfterDiscount: lastSummaryTotals.totalAfterDiscount
     };
 
     const submitButton = orderForm.querySelector('.cart-submit');
@@ -192,8 +407,25 @@ if (orderForm) {
         cart = [];
         saveCart();
         orderForm.reset();
+        removeActiveDiscount({ silent: true });
+        showDiscountFeedback('', '');
       } else {
-        showOrderMessage('error', 'Błąd składania zamówienia. Spróbuj ponownie.');
+        let errorMessage = 'Błąd składania zamówienia. Spróbuj ponownie.';
+        try {
+          const errorData = await response.json();
+          if (errorData && errorData.error) {
+            errorMessage = errorData.error;
+          }
+        } catch (err) {
+          /* ignoruj błąd parsowania */
+        }
+
+        showOrderMessage('error', errorMessage);
+
+        if (/kod rabatowy/i.test(errorMessage)) {
+          removeActiveDiscount({ silent: true });
+          showDiscountFeedback('error', errorMessage);
+        }
       }
     } catch (error) {
       console.error(error);
@@ -211,4 +443,5 @@ if (orderForm) {
 window.addEventListener("DOMContentLoaded", () => {
   updateCart();
   updateCartCount();
+  loadDiscountCodes();
 });

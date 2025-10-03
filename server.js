@@ -54,12 +54,18 @@ const availabilityEntrySchema = new mongoose.Schema({
 
 const availabilitySchema = new mongoose.Schema({
   dayIndex: { type: Number, required: true, min: 0, max: 6, unique: true },
-  details: { type: String, default: '' },
-  time: { type: String, default: '' },
   entries: { type: [availabilityEntrySchema], default: [] }
 }, { timestamps: { createdAt: false, updatedAt: true } });
 
 const Availability = mongoose.model('Availability', availabilitySchema);
+
+const discountCodeSchema = new mongoose.Schema({
+  code: { type: String, required: true, unique: true },
+  percent: { type: Number, required: true, min: 0, max: 100 },
+  createdAt: { type: Date, default: Date.now }
+});
+
+const DiscountCode = mongoose.model('DiscountCode', discountCodeSchema);
 
 // API ENDPOINTY
 
@@ -184,8 +190,6 @@ app.get('/api/availability', async (req, res) => {
       return {
         dayIndex,
         dayName,
-        details: record.details || '',
-        time: record.time || '',
         entries: Array.isArray(record.entries)
           ? record.entries.map((entry) => ({
               product: entry && typeof entry.product === 'string' ? entry.product : '',
@@ -229,8 +233,6 @@ app.put('/api/availability/:dayIndex', async (req, res) => {
       { dayIndex },
       {
         dayIndex,
-        details,
-        time,
         entries
       },
       { new: true, upsert: true, setDefaultsOnInsert: true }
@@ -239,8 +241,6 @@ app.put('/api/availability/:dayIndex', async (req, res) => {
     res.json({
       dayIndex: updated.dayIndex,
       dayName: daysOfWeek[updated.dayIndex],
-      details: updated.details,
-      time: updated.time,
       entries: Array.isArray(updated.entries)
         ? updated.entries.map((entry) => ({
             product: entry && typeof entry.product === 'string' ? entry.product : '',
@@ -252,6 +252,52 @@ app.put('/api/availability/:dayIndex', async (req, res) => {
   } catch (err) {
     console.error('Błąd zapisu dostępności:', err);
     res.status(500).json({ error: 'Błąd zapisu dostępności' });
+  }
+});
+
+app.get('/api/discount-codes', async (req, res) => {
+  try {
+    const codes = await DiscountCode.find().sort({ code: 1 }).lean();
+    res.json(codes);
+  } catch (err) {
+    console.error('Błąd pobierania kodów rabatowych:', err);
+    res.status(500).json({ error: 'Błąd pobierania kodów rabatowych' });
+  }
+});
+
+app.post('/api/discount-codes', async (req, res) => {
+  try {
+    const rawCode = typeof req.body.code === 'string' ? req.body.code.trim().toUpperCase() : '';
+    const rawPercent = Number(req.body.percent);
+
+    if (!rawCode || rawCode.length > 40) {
+      return res.status(400).json({ error: 'Kod rabatowy jest wymagany' });
+    }
+
+    if (!Number.isFinite(rawPercent) || rawPercent <= 0 || rawPercent > 100) {
+      return res.status(400).json({ error: 'Procent rabatu musi być z zakresu 1-100' });
+    }
+
+    const existing = await DiscountCode.findOne({ code: rawCode });
+    if (existing) {
+      return res.status(409).json({ error: 'Taki kod rabatowy już istnieje' });
+    }
+
+    const code = await DiscountCode.create({ code: rawCode, percent: rawPercent });
+    res.json(code);
+  } catch (err) {
+    console.error('Błąd zapisu kodu rabatowego:', err);
+    res.status(500).json({ error: 'Błąd zapisu kodu rabatowego' });
+  }
+});
+
+app.delete('/api/discount-codes/:id', async (req, res) => {
+  try {
+    await DiscountCode.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Błąd usuwania kodu rabatowego:', err);
+    res.status(500).json({ error: 'Błąd usuwania kodu rabatowego' });
   }
 });
 
@@ -286,12 +332,58 @@ const Order = mongoose.model("Order", new mongoose.Schema({
       quantity: Number
     }
   ],
+  discountCode: { type: String, default: '' },
+  discountPercent: { type: Number, default: 0 },
+  discountAmount: { type: Number, default: 0 },
+  totalBeforeDiscount: { type: Number, default: 0 },
+  totalAfterDiscount: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now }
 }));
 
 app.post("/api/orders", async (req, res) => {
   try {
-    const order = new Order(req.body);
+    const products = Array.isArray(req.body.products) ? req.body.products : [];
+
+    const normalizedProducts = products
+      .map((product) => ({
+        id: product.id,
+        name: product.name,
+        price: Number(product.price),
+        quantity: Number(product.quantity)
+      }))
+      .filter((product) => product.name && Number.isFinite(product.price) && Number.isFinite(product.quantity) && product.quantity > 0);
+
+    const totalBeforeDiscount = Number(normalizedProducts.reduce((sum, item) => sum + item.price * item.quantity, 0).toFixed(2));
+
+    const submittedCode = typeof req.body.discountCode === 'string' ? req.body.discountCode.trim().toUpperCase() : '';
+    let discountPercent = 0;
+    let discountCode = '';
+
+    if (submittedCode) {
+      const codeRecord = await DiscountCode.findOne({ code: submittedCode }).lean();
+      if (!codeRecord) {
+        return res.status(400).json({ error: 'Nieprawidłowy kod rabatowy' });
+      }
+      discountPercent = Number(codeRecord.percent) || 0;
+      discountCode = codeRecord.code;
+    }
+
+    const discountAmount = Number((totalBeforeDiscount * discountPercent / 100).toFixed(2));
+    const totalAfterDiscount = Math.max(0, Number((totalBeforeDiscount - discountAmount).toFixed(2)));
+
+    const order = new Order({
+      email: typeof req.body.email === 'string' ? req.body.email : '',
+      phone: typeof req.body.phone === 'string' ? req.body.phone : '',
+      comment: typeof req.body.comment === 'string' ? req.body.comment : '',
+      payment: typeof req.body.payment === 'string' ? req.body.payment : '',
+      products: normalizedProducts,
+      discountCode,
+      discountPercent,
+      discountAmount,
+      totalBeforeDiscount,
+      totalAfterDiscount
+    });
+
     await order.save();
     res.json({ message: "Zamówienie zapisane", order });
   } catch (err) {

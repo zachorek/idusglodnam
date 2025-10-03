@@ -8,11 +8,17 @@ const categorySelect = document.getElementById("categorySelect");
 const imageInput = document.getElementById("image");
 const availabilityManager = document.getElementById("availabilityManager");
 const availabilityMessage = document.getElementById("availabilityMessage");
+const discountForm = document.getElementById("discountForm");
+const discountMessage = document.getElementById("discountMessage");
+const discountList = document.getElementById("discountList");
+const discountCodeInput = document.getElementById("discountCode");
+const discountPercentInput = document.getElementById("discountPercent");
 
 const DAYS_OF_WEEK = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela'];
 let availabilityMessageTimer = null;
 
 let categoriesCache = [];
+let discountCodesCache = [];
 
 if (categoryList) {
   fetchCategories();
@@ -26,6 +32,15 @@ if (productGrid) {
 if (availabilityManager) {
   fetchAvailabilitySchedule();
   availabilityManager.addEventListener('click', handleAvailabilityClick);
+}
+
+if (discountList) {
+  fetchDiscountCodes();
+  discountList.addEventListener('click', handleDiscountListClick);
+}
+
+if (discountForm) {
+  discountForm.addEventListener('submit', handleDiscountFormSubmit);
 }
 
 if (categoryForm) {
@@ -151,8 +166,6 @@ function renderAvailabilityManager(schedule) {
   const data = schedule.length ? schedule : DAYS_OF_WEEK.map((dayName, dayIndex) => ({
     dayIndex,
     dayName,
-    details: '',
-    time: '',
     entries: [],
     updatedAt: null
   }));
@@ -423,6 +436,166 @@ function showAvailabilityNotice(type, message) {
   availabilityMessageTimer = setTimeout(() => {
     availabilityMessage.classList.remove('visible');
   }, 4000);
+}
+
+
+async function fetchDiscountCodes() {
+  try {
+    const res = await fetch('/api/discount-codes');
+    if (!res.ok) {
+      throw new Error('Błąd odpowiedzi serwera');
+    }
+
+    discountCodesCache = await res.json();
+    showDiscountMessage('', '');
+    renderDiscountCodes();
+  } catch (err) {
+    console.error('Błąd pobierania kodów rabatowych:', err);
+    showDiscountMessage('error', 'Nie udało się pobrać kodów rabatowych.');
+    if (discountList) {
+      discountList.innerHTML = '';
+    }
+  }
+}
+
+function renderDiscountCodes() {
+  if (!discountList) {
+    return;
+  }
+
+  discountList.innerHTML = '';
+
+  if (!discountCodesCache.length) {
+    discountList.innerHTML = '<p>Brak zapisanych kodów rabatowych.</p>';
+    return;
+  }
+
+  discountCodesCache.forEach((code) => {
+    const item = document.createElement('div');
+    item.className = 'discount-item';
+    item.dataset.id = code._id;
+
+    const info = document.createElement('div');
+    const codeLabel = document.createElement('strong');
+    codeLabel.textContent = code.code;
+    const percentLabel = document.createElement('span');
+    percentLabel.textContent = `${Number(code.percent).toFixed(0)}%`;
+    info.append(codeLabel, percentLabel);
+
+    const deleteButton = document.createElement('button');
+    deleteButton.type = 'button';
+    deleteButton.textContent = 'Usuń';
+    deleteButton.dataset.id = code._id;
+
+    item.append(info, deleteButton);
+    discountList.appendChild(item);
+  });
+}
+
+async function handleDiscountFormSubmit(event) {
+  event.preventDefault();
+
+  if (!discountForm) {
+    return;
+  }
+
+  const codeValue = normalizeDiscountCode(discountCodeInput ? discountCodeInput.value : '');
+  const percentValue = Math.round(Number(discountPercentInput ? discountPercentInput.value : 0));
+
+  if (!codeValue) {
+    showDiscountMessage('error', 'Wpisz kod rabatowy.');
+    if (discountCodeInput) {
+      discountCodeInput.focus();
+    }
+    return;
+  }
+
+  if (discountCodeInput) {
+    discountCodeInput.value = codeValue;
+  }
+
+  if (!Number.isFinite(percentValue) || percentValue <= 0 || percentValue > 100) {
+    showDiscountMessage('error', 'Podaj procent rabatu z zakresu 1-100.');
+    if (discountPercentInput) {
+      discountPercentInput.focus();
+    }
+    return;
+  }
+
+  const submitButton = discountForm.querySelector('button[type="submit"]');
+  if (submitButton) {
+    submitButton.disabled = true;
+  }
+
+  try {
+    const res = await fetch('/api/discount-codes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: codeValue, percent: percentValue })
+    });
+
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ }));
+      throw new Error(error && error.error ? error.error : 'Błąd dodawania kodu');
+    }
+
+    showDiscountMessage('success', `Dodano kod ${codeValue}.`);
+    discountForm.reset();
+    await fetchDiscountCodes();
+  } catch (err) {
+    console.error('Błąd zapisu kodu rabatowego:', err);
+    showDiscountMessage('error', err && err.message ? err.message : 'Błąd zapisu kodu rabatowego.');
+  } finally {
+    if (submitButton) {
+      submitButton.disabled = false;
+    }
+  }
+}
+
+async function handleDiscountListClick(event) {
+  const button = event.target.closest('button');
+  if (!button || !button.dataset.id) {
+    return;
+  }
+
+  const id = button.dataset.id;
+
+  if (!confirm('Na pewno chcesz usunąć ten kod rabatowy?')) {
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/discount-codes/${id}`, { method: 'DELETE' });
+    if (!res.ok) {
+      throw new Error('Błąd usuwania kodu');
+    }
+
+    showDiscountMessage('success', 'Kod rabatowy został usunięty.');
+    discountCodesCache = discountCodesCache.filter((code) => code._id !== id);
+    renderDiscountCodes();
+  } catch (err) {
+    console.error('Błąd usuwania kodu rabatowego:', err);
+    showDiscountMessage('error', 'Nie udało się usunąć kodu rabatowego.');
+  }
+}
+
+function showDiscountMessage(type, message) {
+  if (!discountMessage) {
+    return;
+  }
+
+  discountMessage.textContent = message;
+  discountMessage.classList.remove('success', 'error');
+  if (type) {
+    discountMessage.classList.add(type);
+  }
+}
+
+function normalizeDiscountCode(value) {
+  return (value || '')
+    .trim()
+    .replace(/\s+/g, '')
+    .toUpperCase();
 }
 
 

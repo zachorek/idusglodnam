@@ -26,33 +26,64 @@
   </div>
   </nav>
 
-  <header class="hero">
-    <h1>Twój koszyk</h1>
+  <header class="hero cart-hero">
+    <div class="hero-inner">
+      <h1>Twój koszyk</h1>
+      <p>Jeszcze tylko krok dzieli Cię od świeżych wypieków prosto z pieca.</p>
+    </div>
   </header>
 
-  <section class="cart-page">
-    <div id="cartItems"></div>
-    <p id="cartTotal"><strong>Razem: 0 zł</strong></p>
+  <main class="cart-layout">
+    <section class="cart-items-panel glass-panel">
+      <div class="panel-heading">
+        <h2>Twoje produkty</h2>
+      </div>
+      <div id="cartItems" class="cart-items-list"></div>
+    </section>
 
-    <h2>Dane do zamówienia</h2>
-    <form id="orderForm">
-      <input type="email" id="email" placeholder="Twój email" required><br>
-      <input type="tel" id="phone" placeholder="Twój telefon" required><br>
-      <textarea id="comment" placeholder="Komentarz do zamówienia"></textarea><br>
+    <aside class="cart-summary-panel glass-panel">
+      <div class="cart-summary-card">
+        <div class="cart-summary-header">
+          <span>Razem</span>
+          <span id="cartTotal" class="cart-total-amount">0 zł</span>
+        </div>
+        <div class="cart-summary-divider"></div>
+      </div>
 
-      <label>
-        <input type="radio" name="payment" value="place" checked>
-        Płatność na miejscu
-      </label>
-      <label>
-        <input type="radio" name="payment" value="online">
-        Płatność przez internet
-      </label><br><br>
+      <div class="cart-form-wrapper">
+        <h2 class="cart-form-title">Dane do zamówienia</h2>
+        <form id="orderForm" class="cart-form">
+          <label class="cart-field">
+            <span>Email</span>
+            <input type="email" id="email" placeholder="Twój adres email" required>
+          </label>
+          <label class="cart-field">
+            <span>Telefon</span>
+            <input type="tel" id="phone" placeholder="Numer kontaktowy" required>
+          </label>
+          <label class="cart-field">
+            <span>Komentarz</span>
+            <textarea id="comment" placeholder="Wpisz uwagi do zamówienia, np. stopień wypieczenia"></textarea>
+          </label>
 
-      <button type="submit">Złóż zamówienie</button>
-    </form>
-    <div id="orderMessage"></div>
-  </section>
+          <fieldset class="cart-payment">
+            <legend>Forma płatności</legend>
+            <label class="radio-option">
+              <input type="radio" name="payment" value="place" checked>
+              <span>Płatność na miejscu</span>
+            </label>
+            <label class="radio-option">
+              <input type="radio" name="payment" value="online">
+              <span>Płatność przez internet</span>
+            </label>
+          </fieldset>
+
+          <button type="submit" class="cart-submit">Złóż zamówienie</button>
+        </form>
+        <div id="orderMessage" class="order-message"></div>
+      </div>
+    </aside>
+  </main>
 
   <script src="cart.js"></script>
 </body>

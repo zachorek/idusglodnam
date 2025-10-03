@@ -45,6 +45,22 @@ const Category = mongoose.model('Category', new mongoose.Schema({
   order: { type: Number, default: 0 }
 }));
 
+const daysOfWeek = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela'];
+
+const availabilityEntrySchema = new mongoose.Schema({
+  product: { type: String, default: '' },
+  availableFrom: { type: String, default: '' }
+}, { _id: false });
+
+const availabilitySchema = new mongoose.Schema({
+  dayIndex: { type: Number, required: true, min: 0, max: 6, unique: true },
+  details: { type: String, default: '' },
+  time: { type: String, default: '' },
+  entries: { type: [availabilityEntrySchema], default: [] }
+}, { timestamps: { createdAt: false, updatedAt: true } });
+
+const Availability = mongoose.model('Availability', availabilitySchema);
+
 // API ENDPOINTY
 
 // Pobierz wszystkie produkty
@@ -156,6 +172,86 @@ app.put('/api/categories/reorder', async (req, res) => {
   } catch (err) {
     console.error('Błąd zmiany kolejności kategorii:', err);
     res.status(500).json({ error: 'Błąd zmiany kolejności kategorii' });
+  }
+});
+
+app.get('/api/availability', async (req, res) => {
+  try {
+    const records = await Availability.find().lean();
+    const mapped = new Map(records.map((record) => [record.dayIndex, record]));
+    const schedule = daysOfWeek.map((dayName, dayIndex) => {
+      const record = mapped.get(dayIndex) || {};
+      return {
+        dayIndex,
+        dayName,
+        details: record.details || '',
+        time: record.time || '',
+        entries: Array.isArray(record.entries)
+          ? record.entries.map((entry) => ({
+              product: entry && typeof entry.product === 'string' ? entry.product : '',
+              availableFrom: entry && typeof entry.availableFrom === 'string' ? entry.availableFrom : ''
+            }))
+          : [],
+        updatedAt: record.updatedAt || null
+      };
+    });
+
+    res.json(schedule);
+  } catch (err) {
+    console.error('Błąd pobierania dostępności:', err);
+    res.status(500).json({ error: 'Błąd pobierania dostępności' });
+  }
+});
+
+app.put('/api/availability/:dayIndex', async (req, res) => {
+  const dayIndex = Number(req.params.dayIndex);
+  if (!Number.isInteger(dayIndex) || dayIndex < 0 || dayIndex > 6) {
+    return res.status(400).json({ error: 'Nieprawidłowy dzień tygodnia' });
+  }
+
+  const rawDetails = typeof req.body.details === 'string' ? req.body.details : '';
+  const rawTime = typeof req.body.time === 'string' ? req.body.time : '';
+  const rawEntries = Array.isArray(req.body.entries) ? req.body.entries : [];
+
+  const details = rawDetails.trim().slice(0, 800);
+  const time = rawTime.trim().slice(0, 120);
+  const entries = rawEntries
+    .slice(0, 20)
+    .map((entry) => {
+      const product = entry && typeof entry.product === 'string' ? entry.product.trim().slice(0, 200) : '';
+      const availableFrom = entry && typeof entry.availableFrom === 'string' ? entry.availableFrom.trim().slice(0, 80) : '';
+      return { product, availableFrom };
+    })
+    .filter((entry) => entry.product || entry.availableFrom);
+
+  try {
+    const updated = await Availability.findOneAndUpdate(
+      { dayIndex },
+      {
+        dayIndex,
+        details,
+        time,
+        entries
+      },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    ).lean();
+
+    res.json({
+      dayIndex: updated.dayIndex,
+      dayName: daysOfWeek[updated.dayIndex],
+      details: updated.details,
+      time: updated.time,
+      entries: Array.isArray(updated.entries)
+        ? updated.entries.map((entry) => ({
+            product: entry && typeof entry.product === 'string' ? entry.product : '',
+            availableFrom: entry && typeof entry.availableFrom === 'string' ? entry.availableFrom : ''
+          }))
+        : [],
+      updatedAt: updated.updatedAt
+    });
+  } catch (err) {
+    console.error('Błąd zapisu dostępności:', err);
+    res.status(500).json({ error: 'Błąd zapisu dostępności' });
   }
 });
 

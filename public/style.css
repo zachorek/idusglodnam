@@ -1044,3 +1044,464 @@ body {
     transform: translate3d(-120px, -60px, 0);
   }
 }
+
+
+/* Accessibility schedule */
+.accessibility-hero {
+  background: linear-gradient(135deg, #fff7f1 0%, #ffe4c9 100%);
+  padding: 60px 20px 70px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.accessibility-hero::before,
+.accessibility-hero::after {
+  content: "";
+  position: absolute;
+  width: 280px;
+  height: 280px;
+  background: radial-gradient(circle at center, rgba(230, 126, 34, 0.28), transparent 70%);
+  filter: blur(0.5px);
+  opacity: 0.4;
+  animation: drift 18s linear infinite;
+}
+
+.accessibility-hero::before {
+  top: -120px;
+  left: -140px;
+}
+
+.accessibility-hero::after {
+  bottom: -140px;
+  right: -120px;
+  animation-direction: reverse;
+}
+
+.accessibility-hero .hero-inner {
+  position: relative;
+  z-index: 1;
+  max-width: 720px;
+  margin: 0 auto;
+  animation: fade-slide-down 0.8s ease both;
+}
+
+.accessibility-hero h1 {
+  font-size: 3rem;
+  margin-bottom: 12px;
+  color: #4a3426;
+}
+
+.availability-wrapper {
+  max-width: 1120px;
+  margin: -40px auto 80px;
+  padding: 0 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.availability-intro {
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 20px 40px rgba(231, 164, 104, 0.18);
+  padding: 36px;
+  text-align: left;
+}
+
+.availability-intro h2 {
+  font-size: 1.9rem;
+  margin-bottom: 12px;
+}
+
+.availability-note {
+  margin: 16px 0 0;
+  font-style: italic;
+  color: #7c5a3c;
+}
+
+.availability-week {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.availability-grid {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.availability-grid.is-loading::after {
+  content: 'Ładuję harmonogram...';
+  grid-column: 1 / -1;
+  padding: 24px;
+  text-align: center;
+  color: #7c5a3c;
+  background: rgba(255, 249, 242, 0.8);
+  border-radius: 18px;
+  animation: fade-in 0.45s ease both;
+}
+
+.availability-card {
+  position: relative;
+  padding: 28px 24px;
+  border-radius: 20px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(255, 240, 220, 0.92));
+  box-shadow: 0 18px 32px rgba(231, 164, 104, 0.18);
+  border: 1px solid rgba(255, 218, 193, 0.5);
+  overflow: hidden;
+  animation: fade-slide-up 0.6s ease both;
+  animation-delay: calc(0.04s * var(--card-index, 0));
+  transition: transform 0.35s ease, box-shadow 0.35s ease;
+}
+
+.availability-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, rgba(230, 126, 34, 0.18), transparent 60%);
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  pointer-events: none;
+}
+
+.availability-card:hover {
+  transform: translateY(-6px) scale(1.01);
+  box-shadow: 0 24px 48px rgba(231, 164, 104, 0.28);
+}
+
+.availability-card:hover::before {
+  opacity: 1;
+}
+
+.availability-card__header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.availability-card__header h3 {
+  margin: 0;
+  font-size: 1.4rem;
+  color: #4a3426;
+}
+
+.availability-card__time {
+  margin: 0;
+  color: #e67e22;
+  font-weight: 600;
+}
+
+.availability-card__details {
+  margin: 0;
+  color: #5c4332;
+  line-height: 1.6;
+}
+
+.availability-error {
+  padding: 18px 24px;
+  border-radius: 18px;
+  background: rgba(198, 40, 40, 0.1);
+  color: #c62828;
+  font-weight: 600;
+  text-align: center;
+  animation: fade-in 0.4s ease both;
+}
+
+@media (max-width: 720px) {
+  .availability-intro {
+    padding: 28px;
+  }
+
+  .availability-card {
+    padding: 24px 20px;
+  }
+}
+
+/* Host availability manager */
+.host-availability-section {
+  max-width: 1120px;
+  margin: 60px auto;
+  padding: 0 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.host-availability-header h2 {
+  font-size: 2rem;
+  margin-bottom: 6px;
+}
+
+.host-availability-header p {
+  margin: 0;
+  color: #7c5a3c;
+}
+
+.availability-manager-grid {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.availability-manager-card {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(255, 241, 227, 0.92));
+  border-radius: 20px;
+  box-shadow: 0 16px 32px rgba(231, 164, 104, 0.2);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  border: 1px solid rgba(255, 218, 193, 0.55);
+  transition: transform 0.35s ease, box-shadow 0.35s ease;
+}
+
+.availability-manager-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 22px 42px rgba(231, 164, 104, 0.3);
+}
+
+.availability-manager-card__header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.availability-manager-card__header h3 {
+  margin: 0;
+  font-size: 1.4rem;
+  color: #4a3426;
+}
+
+.availability-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: #6f4f37;
+}
+
+.availability-field span {
+  font-weight: 600;
+}
+
+.availability-textarea {
+  min-height: 120px;
+  resize: none;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(231, 164, 104, 0.4);
+  background: rgba(255, 255, 255, 0.96);
+  line-height: 1.5;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.availability-input {
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(231, 164, 104, 0.4);
+  background: rgba(255, 255, 255, 0.96);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.availability-textarea:focus,
+.availability-input:focus {
+  border-color: rgba(230, 126, 34, 0.85);
+  box-shadow: 0 12px 24px rgba(231, 164, 104, 0.25);
+  outline: none;
+}
+
+.availability-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.availability-save {
+  border: none;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #e67e22, #ff9d4d);
+  color: #fff;
+  font-weight: 700;
+  padding: 12px 20px;
+  cursor: pointer;
+  box-shadow: 0 18px 30px rgba(231, 164, 104, 0.3);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.availability-save:hover:not(:disabled) {
+  transform: translateY(-3px);
+  box-shadow: 0 24px 44px rgba(231, 164, 104, 0.45);
+}
+
+.availability-save:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.availability-message {
+  min-height: 24px;
+  font-weight: 600;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.availability-message.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.availability-message.success {
+  color: #2e7d32;
+}
+
+.availability-card__list {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.availability-card__list-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  background: rgba(255, 249, 242, 0.8);
+  padding: 12px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(230, 126, 34, 0.18);
+}
+
+.availability-card__list-product {
+  font-weight: 600;
+  color: #4a3426;
+}
+
+.availability-card__list-time {
+  color: #e67e22;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.availability-card__empty {
+  margin: 12px 0 0;
+  color: #8c6a52;
+  font-style: italic;
+}
+
+.availability-entries-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.availability-entries-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-weight: 600;
+  color: #6f4f37;
+}
+
+.availability-entries {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.availability-entry {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.availability-entry-input {
+  flex: 1;
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(231, 164, 104, 0.4);
+  background: rgba(255, 255, 255, 0.96);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.availability-entry-input:focus {
+  border-color: rgba(230, 126, 34, 0.85);
+  box-shadow: 0 12px 24px rgba(231, 164, 104, 0.25);
+  outline: none;
+}
+
+.availability-entry-time {
+  flex: 0 0 160px;
+}
+
+.availability-entry-remove {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: linear-gradient(135deg, #ffe0c4, #ffc799);
+  color: #6f4f37;
+  font-size: 1.2rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.availability-entry-remove:hover:not(.is-disabled) {
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 10px 20px rgba(230, 126, 34, 0.28);
+}
+
+.availability-entry-remove.is-disabled {
+  opacity: 0.45;
+  cursor: default;
+  box-shadow: none;
+}
+
+.availability-entry-add {
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 249, 242, 0.9);
+  color: #6f4f37;
+  font-weight: 600;
+  padding: 10px 18px;
+  cursor: pointer;
+  margin-left: auto;
+  margin-top: 4px;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.availability-entry-add:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 22px rgba(231, 164, 104, 0.25);
+}
+
+@media (max-width: 640px) {
+  .availability-entry {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .availability-entry-time {
+    flex: 1;
+  }
+}
+
+.availability-message.error {
+  color: #c62828;
+}
+
+@media (max-width: 720px) {
+  .host-availability-section {
+    margin: 40px auto;
+  }
+}

@@ -7,24 +7,46 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <nav class="navbar">
-  <div class="nav-left">
-    <a href="/index">
-      <img src="images/logo.png" alt="Logo top left corner" class="logo_top_left_corner">
-      <img src="images/podpis.png" alt="Name top left corner" class="name_top_left_corner">
-    </a>
-  </div>
-  <ul class="nav-links">
-    <li><a href="/index">Zamów</a></li>
-    <li><a href="/accessibility">Dostępność i odbiory</a></li>
-    <li><a href="/about">O nas</a></li>
-  </ul>
-  <div class="nav-right">
-    <a href="/cart" class="cart">
-      🛒 Koszyk <span id="cartCount">0</span>
-    </a>
-  </div>
+  <nav class="navbar">
+    <div class="nav-left">
+      <a href="/index">
+        <img src="images/logo.png" alt="Logo top left corner" class="logo_top_left_corner">
+        <img src="images/podpis.png" alt="Name top left corner" class="name_top_left_corner">
+      </a>
+    </div>
+    <ul class="nav-links">
+      <li><a href="/index">Zamów</a></li>
+      <li><a href="/accessibility">Dostępność i odbiory</a></li>
+      <li><a href="/about">O nas</a></li>
+    </ul>
+    <div class="nav-right">
+      <a href="/cart" class="cart">
+        🛒 Koszyk <span id="cartCount">0</span>
+      </a>
+    </div>
   </nav>
+
+  <header class="accessibility-hero">
+    <div class="hero-inner">
+      <h1>Dostępność i odbiory</h1>
+      <p>Sprawdź, co serwujemy w poszczególne dni tygodnia i kiedy możesz odebrać swoje wypieki.</p>
+    </div>
+  </header>
+
+  <main class="availability-wrapper">
+    <section class="availability-intro glass-panel">
+      <h2>Jak to działa?</h2>
+      <p>Oferta wypieków zmienia się każdego dnia. Poniżej znajdziesz aktualny harmonogram z godziną, od której każdy produkt jest dostępny.</p>
+      <p class="availability-note">Informacje aktualizowane są przez hosta i mogą ulegać zmianom – zaglądaj regularnie!</p>
+    </section>
+
+    <section class="availability-week">
+      <div id="availabilityGrid" class="availability-grid"></div>
+      <div id="availabilityError" class="availability-error" role="alert" hidden></div>
+    </section>
+  </main>
+
   <script src="script.js"></script>
+  <script src="accessibility.js"></script>
 </body>
 </html>

@@ -28,11 +28,44 @@
 
   <img src="images/logo.png" alt="Chachor logo" class="logo">
 
+  <main class="order-layout">
+    <section id="menu" class="order-menu glass-panel">
+      <header class="order-menu-header">
+        <h2>Menu wypieków</h2>
+        <p>Dodaj wypieki z ulubionych kategorii do koszyka i skomponuj swój idealny zestaw.</p>
+      </header>
+      <div id="productGrid" class="category-container"></div>
+    </section>
 
-  <section id="products" class="products-section">
-    <h2>Dostępne wypieki</h2>
-    <div id="productGrid" class="product-grid"></div>
-  </section>
+    <section class="glass-panel order-intro">
+      <h2>Jak złożyć zamówienie?</h2>
+      <div class="order-steps">
+        <div class="order-step">
+          <span class="order-step-number">1</span>
+          <p>Przeglądaj kategorie i dodawaj wypieki, które chcesz zamówić.</p>
+        </div>
+        <div class="order-step">
+          <span class="order-step-number">2</span>
+          <p>W koszyku zdecyduj o formie płatności i dodaj ewentualne uwagi.</p>
+        </div>
+        <div class="order-step">
+          <span class="order-step-number">3</span>
+          <p>Odbierz zamówienie w dogodnym terminie wskazanym w harmonogramie.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="hero order-hero order-hero-cta">
+      <div class="hero-inner">
+        <h2>Gotowi na odbiór?</h2>
+        <p>Sprawdź harmonogram odbiorów i przygotuj swój koszyk, by niczego nie przegapić.</p>
+        <div class="order-hero-actions">
+          <a href="/accessibility" class="order-hero-button secondary">Zobacz harmonogram</a>
+          <a href="/cart" class="order-hero-button primary">Przejdź do koszyka</a>
+        </div>
+      </div>
+    </section>
+  </main>
 
   <div id="productModal" class="modal" aria-hidden="true" role="dialog" aria-modal="true">
     <div class="modal-content" role="document">

@@ -7,6 +7,9 @@ const cartActionClose = cartActionModal ? cartActionModal.querySelector('.modal-
 const cartActionMessage = document.getElementById('cartActionMessage');
 const cartActionGoToCart = document.getElementById('cartActionGoToCart');
 const cartActionContinue = document.getElementById('cartActionContinue');
+const PRODUCT_DAY_LABELS = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela'];
+const PRODUCT_DAY_ABBREVIATIONS = ['PN', 'WT', 'ŚR', 'CZ', 'PT', 'SO', 'ND'];
+const MAX_AVAILABILITY_TILES = 6;
 
 let lastFocusedElement = null;
 let lastCartActionFocusedElement = null;
@@ -69,6 +72,80 @@ if (typeof document !== 'undefined') {
 
 let cart = JSON.parse(sessionStorage.getItem('cart')) || [];
 const cartCount = document.getElementById('cartCount');
+
+function parseAvailabilityValue(value) {
+  if (Array.isArray(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return [];
+    }
+    if (/^(all|daily|codziennie)$/i.test(trimmed)) {
+      return PRODUCT_DAY_ABBREVIATIONS.map((_, index) => index);
+    }
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch (err) {
+      // ignore JSON parse errors and fallback to comma-separated string
+    }
+    return trimmed.split(',');
+  }
+  if (value === undefined || value === null) {
+    return [];
+  }
+  return [value];
+}
+
+function normalizeAvailabilityDaysForRender(days) {
+  const source = parseAvailabilityValue(days);
+  const normalized = source
+    .map((item) => Number(item))
+    .filter((num) => Number.isInteger(num) && num >= 0 && num < PRODUCT_DAY_ABBREVIATIONS.length);
+  const unique = Array.from(new Set(normalized)).sort((a, b) => a - b);
+  const daily = unique.length === PRODUCT_DAY_ABBREVIATIONS.length;
+  return { daily, days: unique };
+}
+
+function buildAvailabilityTiles(days) {
+  const data = normalizeAvailabilityDaysForRender(days);
+  const tiles = [];
+
+  if (data.daily) {
+    tiles.push({ abbr: 'codziennie', label: 'Dostępne codziennie', modifier: 'daily' });
+  } else if (data.days.length) {
+    data.days.forEach((index) => {
+      tiles.push({
+        abbr: PRODUCT_DAY_ABBREVIATIONS[index] || '?',
+        label: `Dostępne w ${PRODUCT_DAY_LABELS[index] || ''}`.trim()
+      });
+    });
+  } else {
+    tiles.push({ abbr: '--', label: 'Brak określonych dni', modifier: 'muted' });
+  }
+
+  const container = document.createElement('div');
+  container.classList.add('product-availability-grid');
+  container.setAttribute('aria-label', 'Dni dostępności');
+
+  tiles.slice(0, MAX_AVAILABILITY_TILES).forEach((tile) => {
+    const badge = document.createElement('span');
+    badge.classList.add('product-availability-tile');
+    if (tile.modifier) {
+      badge.classList.add(`product-availability-tile--${tile.modifier}`);
+    }
+    badge.textContent = tile.abbr;
+    badge.setAttribute('aria-label', tile.label);
+    badge.title = tile.label;
+    container.appendChild(badge);
+  });
+
+  return container;
+}
 
 async function fetchProducts() {
   if (!productGrid) {
@@ -164,11 +241,14 @@ function createProductCard(product) {
 
   const imageSrc = product.imageData || product.imageUrl;
   if (imageSrc) {
+    card.classList.add('product-card--with-image');
     const image = document.createElement('img');
     image.src = imageSrc;
     image.alt = product.name || '';
     image.classList.add('product-thumb');
     card.appendChild(image);
+  } else {
+    card.classList.add('product-card--no-image');
   }
 
   const content = document.createElement('div');
@@ -213,7 +293,9 @@ function createProductCard(product) {
   });
 
   content.append(title, desc, price, button);
+  const availability = buildAvailabilityTiles(product.availabilityDays);
   card.appendChild(content);
+  card.appendChild(availability);
 
   card.addEventListener('click', () => openProductModal(product));
   card.addEventListener('keydown', (event) => {
@@ -258,6 +340,9 @@ function openProductModal(product) {
     desc.textContent = product.desc;
     info.appendChild(desc);
   }
+
+  const availability = buildAvailabilityTiles(product.availabilityDays);
+  info.appendChild(availability);
 
   const price = document.createElement('p');
   price.innerHTML = `<strong>${product.price} zł</strong>`;

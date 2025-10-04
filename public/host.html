@@ -34,6 +34,15 @@
       <select id="categorySelect" required>
         <option value="">-- Wybierz kategorię --</option>
       </select>
+      <div class="host-product-availability" id="productAvailabilityPicker">
+        <span class="host-product-availability__label">Dni dostępności</span>
+        <p class="host-product-availability__hint">Zaznacz dni, w które wypiek będzie dostępny w sklepie.</p>
+        <div class="host-product-availability__grid" id="productAvailabilityDays" role="group" aria-label="Dni tygodnia"></div>
+        <label class="host-product-availability__toggle host-product-availability__toggle--all">
+          <input type="checkbox" id="productAvailabilityAll">
+          <span>Codziennie</span>
+        </label>
+      </div>
       <input type="file" id="image" accept="image/*" required>
       <button type="submit">Dodaj produkt</button>
     </form>

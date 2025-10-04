@@ -31,13 +31,80 @@ mongoose.connect(process.env.MONGO_URI)
   .catch(err => console.error('❌ Błąd połączenia z MongoDB:', err));
 
 // MODELE
+const ALL_DAY_INDICES = [0, 1, 2, 3, 4, 5, 6];
+
+function normalizeAvailabilityDayArray(raw) {
+  if (raw === undefined || raw === null) {
+    return [];
+  }
+
+  const collect = (value) => {
+    if (Array.isArray(value)) {
+      return value.flatMap(collect);
+    }
+    if (value === undefined || value === null) {
+      return [];
+    }
+    const str = String(value).trim();
+    if (!str) {
+      return [];
+    }
+    if (/^(all|daily|codziennie)$/i.test(str)) {
+      return ALL_DAY_INDICES;
+    }
+    const num = Number(str);
+    if (Number.isInteger(num)) {
+      return [num];
+    }
+    return [];
+  };
+
+  return Array.from(new Set(collect(raw).filter((num) => num >= 0 && num <= 6))).sort((a, b) => a - b);
+}
+
+function normalizeAvailabilityDaysInput(raw) {
+  if (raw === undefined || raw === null) {
+    return [];
+  }
+
+  if (Array.isArray(raw)) {
+    return normalizeAvailabilityDayArray(raw);
+  }
+
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      return [];
+    }
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return normalizeAvailabilityDayArray(parsed);
+      }
+    } catch (err) {
+      // ignore parse errors and fallback to comma separation
+    }
+    if (/^(all|daily|codziennie)$/i.test(trimmed)) {
+      return ALL_DAY_INDICES;
+    }
+    return normalizeAvailabilityDayArray(trimmed.split(','));
+  }
+
+  return normalizeAvailabilityDayArray([raw]);
+}
+
 const Product = mongoose.model('Product', new mongoose.Schema({
   name: String,
   price: Number,
   desc: String,
   category: { type: String, required: true },
   imageData: String,
-  imageUrl: String
+  imageUrl: String,
+  availabilityDays: {
+    type: [Number],
+    default: [],
+    set: normalizeAvailabilityDayArray
+  }
 }));
 
 const Category = mongoose.model('Category', new mongoose.Schema({
@@ -83,6 +150,7 @@ app.get('/api/products', async (req, res) => {
 app.post('/api/products', upload.single('image'), async (req, res) => {
   try {
     const { name, price, desc, category } = req.body;
+    const availabilityDays = normalizeAvailabilityDaysInput(req.body.availabilityDays);
 
     if (req.fileValidationError) {
       return res.status(400).json({ error: req.fileValidationError });
@@ -109,7 +177,8 @@ app.post('/api/products', upload.single('image'), async (req, res) => {
       price: numericPrice,
       desc: desc ? desc.trim() : desc,
       category,
-      imageData
+      imageData,
+      availabilityDays
     });
 
     await product.save();

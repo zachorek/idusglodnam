@@ -13,8 +13,12 @@ const discountMessage = document.getElementById("discountMessage");
 const discountList = document.getElementById("discountList");
 const discountCodeInput = document.getElementById("discountCode");
 const discountPercentInput = document.getElementById("discountPercent");
+const productAvailabilityDays = document.getElementById("productAvailabilityDays");
+const productAvailabilityAll = document.getElementById("productAvailabilityAll");
 
 const DAYS_OF_WEEK = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela'];
+const PRODUCT_DAY_ABBREVIATIONS = ['PN', 'WT', 'ŚR', 'CZ', 'PT', 'SO', 'ND'];
+const MAX_AVAILABILITY_TILES = 6;
 let availabilityMessageTimer = null;
 
 let categoriesCache = [];
@@ -41,6 +45,14 @@ if (discountList) {
 
 if (discountForm) {
   discountForm.addEventListener('submit', handleDiscountFormSubmit);
+}
+
+if (productAvailabilityDays) {
+  renderProductAvailabilityToggles();
+}
+
+if (productAvailabilityAll) {
+  productAvailabilityAll.addEventListener('change', handleProductAvailabilityAllToggle);
 }
 
 if (categoryForm) {
@@ -101,6 +113,13 @@ if (hostForm) {
     formData.append('category', category);
     formData.append('image', imageFile);
 
+    const selectedDays = getSelectedProductAvailabilityDays();
+    if (productAvailabilityAll && productAvailabilityAll.checked) {
+      formData.append('availabilityDays', 'ALL');
+    } else {
+      formData.append('availabilityDays', JSON.stringify(selectedDays));
+    }
+
     try {
       const res = await fetch('/api/products', {
         method: 'POST',
@@ -125,6 +144,7 @@ if (hostForm) {
 
       hostMessage.innerHTML = `<p style="color:green">Produkt "${data.name}" został dodany!</p>`;
       hostForm.reset();
+      resetProductAvailabilitySelector();
       if (imageInput) {
         imageInput.value = '';
       }
@@ -137,6 +157,148 @@ if (hostForm) {
       hostMessage.innerHTML = `<p style="color:red">${message}</p>`;
     }
   });
+}
+
+
+function getProductAvailabilityCheckboxes() {
+  if (!productAvailabilityDays) {
+    return [];
+  }
+  return Array.from(productAvailabilityDays.querySelectorAll('input[type="checkbox"][data-role="product-day"]'));
+}
+
+function renderProductAvailabilityToggles() {
+  if (!productAvailabilityDays) {
+    return;
+  }
+
+  productAvailabilityDays.innerHTML = '';
+
+  DAYS_OF_WEEK.forEach((dayName, index) => {
+    const label = document.createElement('label');
+    label.className = 'host-product-availability__toggle';
+    label.dataset.dayIndex = String(index);
+
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.value = String(index);
+    input.dataset.role = 'product-day';
+    input.setAttribute('aria-label', dayName);
+    input.addEventListener('change', handleProductAvailabilityDayChange);
+
+    const tile = document.createElement('span');
+    tile.textContent = PRODUCT_DAY_ABBREVIATIONS[index] || '';
+    tile.title = dayName;
+    tile.setAttribute('aria-hidden', 'true');
+
+    label.append(input, tile);
+    productAvailabilityDays.appendChild(label);
+  });
+}
+
+function handleProductAvailabilityDayChange() {
+  if (!productAvailabilityAll) {
+    return;
+  }
+  const checkboxes = getProductAvailabilityCheckboxes();
+  if (!checkboxes.length) {
+    productAvailabilityAll.checked = false;
+    return;
+  }
+  const everyChecked = checkboxes.every((checkbox) => checkbox.checked);
+  productAvailabilityAll.checked = everyChecked;
+}
+
+function handleProductAvailabilityAllToggle(event) {
+  const isChecked = Boolean(event && event.target && event.target.checked);
+  getProductAvailabilityCheckboxes().forEach((checkbox) => {
+    checkbox.checked = isChecked;
+  });
+  handleProductAvailabilityDayChange();
+}
+
+function getSelectedProductAvailabilityDays() {
+  return getProductAvailabilityCheckboxes()
+    .filter((checkbox) => checkbox.checked)
+    .map((checkbox) => Number(checkbox.value))
+    .filter((value) => Number.isInteger(value) && value >= 0 && value < DAYS_OF_WEEK.length)
+    .sort((a, b) => a - b);
+}
+
+function resetProductAvailabilitySelector() {
+  getProductAvailabilityCheckboxes().forEach((checkbox) => {
+    checkbox.checked = false;
+  });
+  if (productAvailabilityAll) {
+    productAvailabilityAll.checked = false;
+  }
+}
+
+function parseAvailabilityValue(value) {
+  if (Array.isArray(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return [];
+    }
+    if (/^(all|daily|codziennie)$/i.test(trimmed)) {
+      return PRODUCT_DAY_ABBREVIATIONS.map((_, index) => index);
+    }
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch (err) {
+      // ignore JSON errors and fallback to comma-separated parsing
+    }
+    return trimmed.split(',');
+  }
+  if (value === undefined || value === null) {
+    return [];
+  }
+  return [value];
+}
+
+function normalizeAvailabilityDaysForRender(days) {
+  const source = parseAvailabilityValue(days);
+  const normalized = source
+    .map((item) => Number(item))
+    .filter((num) => Number.isInteger(num) && num >= 0 && num < DAYS_OF_WEEK.length);
+  const unique = Array.from(new Set(normalized)).sort((a, b) => a - b);
+  const daily = unique.length === DAYS_OF_WEEK.length;
+  return { daily, days: unique };
+}
+
+function renderProductAvailabilityTiles(days) {
+  const data = normalizeAvailabilityDaysForRender(days);
+  const tiles = [];
+
+  if (data.daily) {
+    tiles.push({ abbr: 'codziennie', label: 'Dostępne codziennie', modifier: 'daily' });
+  } else if (data.days.length) {
+    data.days.forEach((index) => {
+      tiles.push({
+        abbr: PRODUCT_DAY_ABBREVIATIONS[index] || '?',
+        label: `Dostępne w ${DAYS_OF_WEEK[index] || ''}`.trim()
+      });
+    });
+  } else {
+    tiles.push({ abbr: '--', label: 'Brak określonych dni', modifier: 'muted' });
+  }
+
+  const limited = tiles.slice(0, MAX_AVAILABILITY_TILES);
+  const itemsMarkup = limited.map((tile) => {
+    const classes = ['product-availability-tile'];
+    if (tile.modifier) {
+      classes.push(`product-availability-tile--${tile.modifier}`);
+    }
+    return `<span class="${classes.join(' ')}" aria-label="${tile.label}" title="${tile.label}">${tile.abbr}</span>`;
+  }).join('');
+
+  return `<div class="product-availability-grid" aria-label="Dni dostępności">${itemsMarkup}</div>`;
 }
 
 
@@ -776,15 +938,22 @@ async function fetchProducts() {
       const imageSrc = product.imageData || product.imageUrl;
       const card = document.createElement('div');
       card.classList.add('product-card');
+      if (imageSrc) {
+        card.classList.add('product-card--with-image');
+      } else {
+        card.classList.add('product-card--no-image');
+      }
+      const availabilityMarkup = renderProductAvailabilityTiles(product.availabilityDays);
       card.innerHTML = `
         ${imageSrc ? `<img src="${imageSrc}" alt="${product.name}" class="product-thumb">` : ''}
         <div class="product-info">
           <h3>${product.name}</h3>
-          <p>${product.desc}</p>
+          <p>${product.desc || ''}</p>
           <p><strong>${product.price} zł</strong></p>
           <p>Kategoria: <em>${product.category}</em></p>
           <button class="delete-btn" data-id="${product._id}">Usuń</button>
         </div>
+        ${availabilityMarkup}
       `;
       productGrid.appendChild(card);
     });

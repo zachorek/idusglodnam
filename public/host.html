@@ -91,6 +91,35 @@
     <div id="discountList" class="discount-list"></div>
   </section>
 
+  <section class="host-about-section glass-panel">
+    <div class="host-about-header">
+      <h2>Sekcja "O nas"</h2>
+      <p>Zaktualizuj zdjęcie i tekst, które wyświetlają się na stronie O nas.</p>
+    </div>
+
+    <form id="aboutForm" class="host-about-form" enctype="multipart/form-data">
+      <label class="about-field">
+        <span>Opis</span>
+        <textarea id="aboutText" name="aboutText" placeholder="Opowiedz krótko o piekarni" required></textarea>
+      </label>
+      <label class="about-field">
+        <span>Zdjęcie w tle</span>
+        <input type="file" id="aboutImage" name="aboutImage" accept="image/*">
+      </label>
+      <button type="submit">Zapisz sekcję</button>
+    </form>
+
+    <div id="aboutMessage" aria-live="polite"></div>
+
+    <div class="host-about-preview" id="aboutPreview">
+      <figure>
+        <img id="aboutPreviewImage" alt="Podgląd zdjęcia sekcji O nas" hidden>
+        <span id="aboutNoImagePlaceholder">Brak zdjęcia — dodaj plik, by zaktualizować sekcję.</span>
+      </figure>
+      <p class="host-about-preview__text" id="aboutPreviewText"></p>
+    </div>
+  </section>
+
   <section id="products" class="products-section">
   <h2>Dostępne wypieki</h2>
   <div id="productGrid" class="product-grid"></div>

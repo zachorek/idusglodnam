@@ -15,10 +15,18 @@ const discountCodeInput = document.getElementById("discountCode");
 const discountPercentInput = document.getElementById("discountPercent");
 const productAvailabilityDays = document.getElementById("productAvailabilityDays");
 const productAvailabilityAll = document.getElementById("productAvailabilityAll");
+const aboutForm = document.getElementById("aboutForm");
+const aboutTextInput = document.getElementById("aboutText");
+const aboutImageInput = document.getElementById("aboutImage");
+const aboutMessage = document.getElementById("aboutMessage");
+const aboutPreviewText = document.getElementById("aboutPreviewText");
+const aboutPreviewImage = document.getElementById("aboutPreviewImage");
+const aboutNoImagePlaceholder = document.getElementById("aboutNoImagePlaceholder");
 
 const DAYS_OF_WEEK = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela'];
 const PRODUCT_DAY_ABBREVIATIONS = ['PN', 'WT', 'ŚR', 'CZ', 'PT', 'SO', 'ND'];
 const MAX_AVAILABILITY_TILES = 6;
+const DEFAULT_ABOUT_TEXT = 'Chachor Piecze to niewielki zespół piekarzy i cukierników, którzy robią codzienne wypieki w rytmie miasta.';
 let availabilityMessageTimer = null;
 
 let categoriesCache = [];
@@ -54,6 +62,16 @@ if (productAvailabilityDays) {
 if (productAvailabilityAll) {
   productAvailabilityAll.addEventListener('change', handleProductAvailabilityAllToggle);
 }
+
+if (aboutImageInput) {
+  aboutImageInput.addEventListener('change', handleAboutImageChange);
+}
+
+if (aboutForm) {
+  aboutForm.addEventListener('submit', handleAboutFormSubmit);
+}
+
+fetchAboutContent();
 
 if (categoryForm) {
   categoryForm.addEventListener("submit", async (e) => {
@@ -993,3 +1011,126 @@ document.addEventListener('click', async (event) => {
     console.error(err);
   }
 });
+
+async function fetchAboutContent() {
+  try {
+    const res = await fetch('/api/about');
+    if (!res.ok) {
+      throw new Error('Błąd odpowiedzi serwera');
+    }
+    const data = await res.json();
+    applyAboutPreview(data);
+  } catch (err) {
+    console.error('Błąd pobierania sekcji O nas:', err);
+    applyAboutPreview(null);
+  }
+}
+
+function applyAboutPreview(data) {
+  const text = data && typeof data.heroText === 'string' && data.heroText.trim()
+    ? data.heroText.trim()
+    : DEFAULT_ABOUT_TEXT;
+
+  if (aboutPreviewText) {
+    aboutPreviewText.textContent = text;
+  }
+
+  if (aboutTextInput) {
+    aboutTextInput.value = text;
+  }
+
+  const imageData = data && typeof data.heroImageData === 'string' ? data.heroImageData : '';
+  if (aboutPreviewImage) {
+    if (imageData) {
+      aboutPreviewImage.src = imageData;
+      aboutPreviewImage.hidden = false;
+    } else {
+      aboutPreviewImage.removeAttribute('src');
+      aboutPreviewImage.hidden = true;
+    }
+  }
+
+  if (aboutNoImagePlaceholder) {
+    aboutNoImagePlaceholder.hidden = Boolean(imageData);
+  }
+}
+
+async function handleAboutFormSubmit(event) {
+  event.preventDefault();
+
+  if (!aboutForm) {
+    return;
+  }
+
+  const formData = new FormData();
+  const text = aboutTextInput ? aboutTextInput.value.trim() : '';
+  if (text) {
+    formData.append('aboutText', text);
+  }
+
+  if (aboutImageInput && aboutImageInput.files && aboutImageInput.files[0]) {
+    formData.append('aboutImage', aboutImageInput.files[0]);
+  }
+
+  if (aboutMessage) {
+    aboutMessage.textContent = 'Zapisuję...';
+    aboutMessage.style.color = '#6b4a34';
+  }
+
+  try {
+    const res = await fetch('/api/about', {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!res.ok) {
+      const errorPayload = await res.json().catch(() => ({}));
+      const message = errorPayload && errorPayload.error ? errorPayload.error : 'Nie udało się zapisać sekcji';
+      throw new Error(message);
+    }
+
+    const data = await res.json();
+    applyAboutPreview(data);
+
+    if (aboutImageInput) {
+      aboutImageInput.value = '';
+    }
+
+    if (aboutMessage) {
+      aboutMessage.textContent = 'Zapisano sekcję O nas.';
+      aboutMessage.style.color = '#2d7a46';
+    }
+  } catch (err) {
+    console.error('Błąd zapisu sekcji O nas:', err);
+    if (aboutMessage) {
+      aboutMessage.textContent = err && err.message ? err.message : 'Nie udało się zapisać sekcji';
+      aboutMessage.style.color = '#c62828';
+    }
+  }
+}
+
+function handleAboutImageChange(event) {
+  const file = event && event.target && event.target.files ? event.target.files[0] : null;
+  if (!aboutPreviewImage) {
+    return;
+  }
+
+  if (!file) {
+    aboutPreviewImage.removeAttribute('src');
+    aboutPreviewImage.hidden = true;
+    if (aboutNoImagePlaceholder) {
+      aboutNoImagePlaceholder.hidden = false;
+    }
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    aboutPreviewImage.src = reader.result;
+    aboutPreviewImage.hidden = false;
+    if (aboutNoImagePlaceholder) {
+      aboutNoImagePlaceholder.hidden = true;
+    }
+  };
+  reader.readAsDataURL(file);
+}

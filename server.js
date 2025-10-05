@@ -32,6 +32,7 @@ mongoose.connect(process.env.MONGO_URI)
 
 // MODELE
 const ALL_DAY_INDICES = [0, 1, 2, 3, 4, 5, 6];
+const DEFAULT_ABOUT_TEXT = 'Chachor Piecze to niewielki zespół piekarzy i cukierników, którzy robią codzienne wypieki w rytmie miasta.';
 
 function normalizeAvailabilityDayArray(raw) {
   if (raw === undefined || raw === null) {
@@ -134,6 +135,11 @@ const discountCodeSchema = new mongoose.Schema({
 
 const DiscountCode = mongoose.model('DiscountCode', discountCodeSchema);
 
+const AboutContent = mongoose.model('AboutContent', new mongoose.Schema({
+  heroImageData: String,
+  heroText: { type: String, default: '' }
+}, { timestamps: true }));
+
 // API ENDPOINTY
 
 // Pobierz wszystkie produkty
@@ -143,6 +149,22 @@ app.get('/api/products', async (req, res) => {
     res.json(products);
   } catch (err) {
     res.status(500).json({ error: 'Błąd pobierania produktów' });
+  }
+});
+
+app.get('/api/about', async (req, res) => {
+  try {
+    const about = await AboutContent.findOne().lean();
+    if (!about) {
+      return res.json({ heroImageData: '', heroText: DEFAULT_ABOUT_TEXT });
+    }
+    if (!about.heroText) {
+      about.heroText = DEFAULT_ABOUT_TEXT;
+    }
+    res.json(about);
+  } catch (err) {
+    console.error('Błąd pobierania sekcji O nas:', err);
+    res.status(500).json({ error: 'Błąd pobierania sekcji O nas' });
   }
 });
 
@@ -186,6 +208,35 @@ app.post('/api/products', upload.single('image'), async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Błąd dodawania produktu' });
+  }
+});
+
+app.post('/api/about', upload.single('aboutImage'), async (req, res) => {
+  try {
+    const text = typeof req.body.aboutText === 'string' ? req.body.aboutText.trim() : '';
+    const update = {};
+
+    if (text) {
+      update.heroText = text;
+    }
+
+    if (req.file) {
+      const base64Image = req.file.buffer.toString('base64');
+      update.heroImageData = `data:${req.file.mimetype};base64,${base64Image}`;
+    }
+
+    if (!Object.keys(update).length) {
+      return res.status(400).json({ error: 'Brak danych do zapisania' });
+    }
+
+    const about = await AboutContent.findOneAndUpdate({}, { $set: update }, { upsert: true, new: true, setDefaultsOnInsert: true }).lean();
+    if (!about.heroText) {
+      about.heroText = DEFAULT_ABOUT_TEXT;
+    }
+    res.json(about);
+  } catch (err) {
+    console.error('Błąd zapisu sekcji O nas:', err);
+    res.status(500).json({ error: 'Nie udało się zapisać sekcji O nas' });
   }
 });
 

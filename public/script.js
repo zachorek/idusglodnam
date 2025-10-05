@@ -259,28 +259,8 @@ function createProductCard(product) {
 
   const desc = document.createElement('p');
   const descText = (product.desc || '').trim();
-  const previewLimit = 160;
-  let previewText = descText;
-  let truncated = false;
-
-  if (descText.length > previewLimit) {
-    const slice = descText.slice(0, previewLimit);
-    const lastSpace = slice.lastIndexOf(' ');
-    previewText = lastSpace > 0 ? slice.slice(0, lastSpace) : slice;
-    truncated = true;
-  }
-
   desc.classList.add('product-desc');
-
-  if (truncated) {
-    desc.append(document.createTextNode(previewText + ' '));
-    const more = document.createElement('span');
-    more.classList.add('product-desc-more');
-    more.textContent = '… więcej';
-    desc.appendChild(more);
-  } else {
-    desc.textContent = previewText;
-  }
+  desc.textContent = descText;
 
   const price = document.createElement('p');
   price.innerHTML = `<strong>${product.price} zł</strong>`;
@@ -295,6 +275,7 @@ function createProductCard(product) {
   content.append(title, desc, price, button);
   const availability = buildAvailabilityTiles(product.availabilityDays);
   card.appendChild(content);
+  scheduleDescriptionTruncation(desc, descText);
   card.appendChild(availability);
 
   card.addEventListener('click', () => openProductModal(product));
@@ -306,6 +287,59 @@ function createProductCard(product) {
   });
 
   return card;
+}
+
+function scheduleDescriptionTruncation(element, fullText) {
+  const ellipsis = '...';
+  const maxAttempts = 4;
+  const raf = typeof requestAnimationFrame === 'function' ? requestAnimationFrame : (cb) => setTimeout(cb, 16);
+
+  function applyTruncation(attemptsLeft) {
+    if (!element.isConnected) {
+      if (attemptsLeft <= 0) {
+        return;
+      }
+      raf(() => applyTruncation(attemptsLeft - 1));
+      return;
+    }
+
+    element.textContent = fullText;
+
+    if (element.scrollHeight <= element.clientHeight + 1) {
+      element.removeAttribute('title');
+      return;
+    }
+
+    let low = 0;
+    let high = fullText.length;
+    let result = fullText;
+    let truncated = false;
+
+    while (low <= high) {
+      const mid = Math.floor((low + high) / 2);
+      const candidate = `${fullText.slice(0, mid).trimEnd()}${ellipsis}`;
+      element.textContent = candidate;
+
+      if (element.scrollHeight > element.clientHeight + 1) {
+        high = mid - 1;
+      } else {
+        result = candidate;
+        truncated = mid < fullText.length;
+        low = mid + 1;
+      }
+    }
+
+    if (!truncated) {
+      element.textContent = fullText;
+      element.removeAttribute('title');
+      return;
+    }
+
+    element.textContent = result;
+    element.setAttribute('title', fullText);
+  }
+
+  raf(() => applyTruncation(maxAttempts));
 }
 
 function openProductModal(product) {

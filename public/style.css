@@ -319,13 +319,6 @@ body {
   flex-grow: 1;
 }
 
-.product-desc-more {
-  font-weight: 600;
-  color: #e67e22;
-  pointer-events: none;
-  display: inline-block;
-}
-
 .product-info {
   display: flex;
   flex-direction: column;

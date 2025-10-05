@@ -6,7 +6,7 @@
   <title>Panel host - Chachor Piecze</title>
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="host-body">
   <script>
     if (sessionStorage.getItem("isHostLogged") !== "true") {
       window.location.href = "/host-login";
@@ -21,109 +21,143 @@
     </ul>
   </nav>
 
-  <header class="hero">
-    <h1>Panel Host</h1>
-    <p>Dodawaj nowe produkty do sklepu</p>
-  </header>
+  <main class="host-dashboard">
+    <section class="host-section glass-panel">
+      <div class="panel-heading">
+        <h2>Dodaj nowy produkt</h2>
+        <p>Wypełnij pola poniżej, aby dodać wypiek do oferty.</p>
+      </div>
 
-  <section class="host-section">
-    <form id="hostForm" enctype="multipart/form-data">
-      <input type="text" id="name" placeholder="Nazwa produktu" required>
-      <input type="number" id="price" placeholder="Cena" required>
-      <input type="text" id="desc" placeholder="Opis produktu" required>
-      <select id="categorySelect" required>
-        <option value="">-- Wybierz kategorię --</option>
-      </select>
-      <div class="host-product-availability" id="productAvailabilityPicker">
-        <span class="host-product-availability__label">Dni dostępności</span>
-        <p class="host-product-availability__hint">Zaznacz dni, w które wypiek będzie dostępny w sklepie.</p>
-        <div class="host-product-availability__grid" id="productAvailabilityDays" role="group" aria-label="Dni tygodnia"></div>
-        <label class="host-product-availability__toggle host-product-availability__toggle--all">
-          <input type="checkbox" id="productAvailabilityAll">
-          <span>Codziennie</span>
+      <form id="hostForm" class="host-form" enctype="multipart/form-data">
+        <div class="host-form-grid">
+          <label class="host-field" for="name">
+            <span>Nazwa produktu</span>
+            <input type="text" id="name" placeholder="np. Drożdżówka z makiem" required>
+          </label>
+          <label class="host-field" for="price">
+            <span>Cena</span>
+            <input type="number" id="price" min="0" step="0.01" placeholder="np. 12" required>
+          </label>
+          <label class="host-field host-field--wide" for="desc">
+            <span>Opis produktu</span>
+            <textarea id="desc" placeholder="Kilka słów o składnikach i smaku" rows="3" required></textarea>
+          </label>
+          <label class="host-field" for="categorySelect">
+            <span>Kategoria</span>
+            <select id="categorySelect" required>
+              <option value="">-- Wybierz kategorię --</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="host-form-split">
+          <div class="host-form-card" id="productAvailabilityPicker">
+            <span class="host-form-card__label">Dni dostępności</span>
+            <p class="host-form-card__hint">Zaznacz dni, w które wypiek będzie dostępny w sklepie.</p>
+            <div class="host-product-availability__grid" id="productAvailabilityDays" role="group" aria-label="Dni tygodnia"></div>
+            <label class="host-product-availability__toggle host-product-availability__toggle--all">
+              <input type="checkbox" id="productAvailabilityAll">
+              <span>Codziennie</span>
+            </label>
+          </div>
+
+          <label class="host-field host-field--file" for="image">
+            <span>Zdjęcie produktu</span>
+            <input type="file" id="image" accept="image/*" required>
+          </label>
+        </div>
+
+        <div class="host-form-actions">
+          <button type="submit" class="host-primary-btn">Dodaj produkt</button>
+        </div>
+      </form>
+
+      <div id="hostMessage" class="host-message" aria-live="polite"></div>
+    </section>
+
+    <section id="categoriesSection" class="host-card glass-panel">
+      <div class="panel-heading">
+        <h2>Kategorie</h2>
+        <p>Porządkuj ofertę według kategorii, aby ułatwić klientom znalezienie wypieków.</p>
+      </div>
+
+      <form id="categoryForm" class="host-inline-form">
+        <label class="host-field" for="categoryName">
+          <span>Nazwa kategorii</span>
+          <input type="text" id="categoryName" placeholder="np. Słodkie" required>
         </label>
+        <button type="submit" class="host-primary-btn host-primary-btn--compact">Dodaj kategorię</button>
+      </form>
+      <div id="categoryMessage" class="host-message" aria-live="polite"></div>
+
+      <div id="categoryList" class="host-category-list"></div>
+    </section>
+
+    <section class="host-availability-section glass-panel host-card host-card--wide">
+      <div class="host-availability-header">
+        <h2>Dostępność tygodniowa</h2>
+        <p>Wpisz wypieki dostępne danego dnia oraz godzinę, od której można je odebrać.</p>
       </div>
-      <input type="file" id="image" accept="image/*" required>
-      <button type="submit">Dodaj produkt</button>
-    </form>
-    <div id="hostMessage"></div>
-  </section>
+      <div id="availabilityManager" class="availability-manager-grid"></div>
+      <div id="availabilityMessage" class="availability-message"></div>
+    </section>
 
-  <section id="categoriesSection">
-    <h2>Kategorie</h2>
-    <form id="categoryForm">
-      <input type="text" id="categoryName" placeholder="Nazwa kategorii" required>
-      <button type="submit">Dodaj kategorię</button>
-    </form>
-    <div id="categoryMessage"></div>
-
-    <div id="categoryList"></div>
-  </section>
-
-  <section class="host-availability-section">
-    <div class="host-availability-header">
-      <h2>Dostępność tygodniowa</h2>
-      <p>Wpisz wypieki dostępne danego dnia oraz godzinę, od której można je odebrać.</p>
-    </div>
-    <div id="availabilityManager" class="availability-manager-grid"></div>
-    <div id="availabilityMessage" class="availability-message"></div>
-  </section>
-
-  <section class="host-discount-section glass-panel">
-    <div class="host-discount-header">
-      <h2>Kody rabatowe</h2>
-      <p>Utwórz kod i przypisz procent rabatu, aby klienci mogli go wykorzystać w koszyku.</p>
-    </div>
-
-    <form id="discountForm" class="discount-form">
-      <div class="discount-form-row">
-        <label class="discount-field" for="discountCode">Kod</label>
-        <input type="text" id="discountCode" placeholder="np. SMAK20" maxlength="40" required>
+    <section class="host-discount-section glass-panel host-card">
+      <div class="host-discount-header">
+        <h2>Kody rabatowe</h2>
+        <p>Utwórz kod i przypisz procent rabatu, aby klienci mogli go wykorzystać w koszyku.</p>
       </div>
-      <div class="discount-form-row">
-        <label class="discount-field" for="discountPercent">Rabat (%)</label>
-        <input type="number" id="discountPercent" min="1" max="100" step="1" placeholder="np. 15" required>
+
+      <form id="discountForm" class="discount-form">
+        <div class="discount-form-row">
+          <label class="discount-field" for="discountCode">Kod</label>
+          <input type="text" id="discountCode" placeholder="np. SMAK20" maxlength="40" required>
+        </div>
+        <div class="discount-form-row">
+          <label class="discount-field" for="discountPercent">Rabat (%)</label>
+          <input type="number" id="discountPercent" min="1" max="100" step="1" placeholder="np. 15" required>
+        </div>
+        <button type="submit" class="host-primary-btn">Dodaj kod</button>
+      </form>
+      <div id="discountMessage" class="discount-message" aria-live="polite"></div>
+
+      <div id="discountList" class="discount-list"></div>
+    </section>
+
+    <section class="host-about-section glass-panel host-card host-card--wide">
+      <div class="host-about-header">
+        <h2>Sekcja "O nas"</h2>
+        <p>Zaktualizuj zdjęcie i tekst, które wyświetlają się na stronie O nas.</p>
       </div>
-      <button type="submit">Dodaj kod</button>
-    </form>
-    <div id="discountMessage" class="discount-message" aria-live="polite"></div>
 
-    <div id="discountList" class="discount-list"></div>
-  </section>
+      <form id="aboutForm" class="host-about-form" enctype="multipart/form-data">
+        <label class="about-field">
+          <span>Opis</span>
+          <textarea id="aboutText" name="aboutText" placeholder="Opowiedz krótko o piekarni" required></textarea>
+        </label>
+        <label class="about-field">
+          <span>Zdjęcie w tle</span>
+          <input type="file" id="aboutImage" name="aboutImage" accept="image/*">
+        </label>
+        <button type="submit" class="host-primary-btn">Zapisz sekcję</button>
+      </form>
 
-  <section class="host-about-section glass-panel">
-    <div class="host-about-header">
-      <h2>Sekcja "O nas"</h2>
-      <p>Zaktualizuj zdjęcie i tekst, które wyświetlają się na stronie O nas.</p>
-    </div>
+      <div id="aboutMessage" class="host-message" aria-live="polite"></div>
 
-    <form id="aboutForm" class="host-about-form" enctype="multipart/form-data">
-      <label class="about-field">
-        <span>Opis</span>
-        <textarea id="aboutText" name="aboutText" placeholder="Opowiedz krótko o piekarni" required></textarea>
-      </label>
-      <label class="about-field">
-        <span>Zdjęcie w tle</span>
-        <input type="file" id="aboutImage" name="aboutImage" accept="image/*">
-      </label>
-      <button type="submit">Zapisz sekcję</button>
-    </form>
+      <div class="host-about-preview" id="aboutPreview">
+        <figure>
+          <img id="aboutPreviewImage" alt="Podgląd zdjęcia sekcji O nas" hidden>
+          <span id="aboutNoImagePlaceholder">Brak zdjęcia — dodaj plik, by zaktualizować sekcję.</span>
+        </figure>
+        <p class="host-about-preview__text" id="aboutPreviewText"></p>
+      </div>
+    </section>
 
-    <div id="aboutMessage" aria-live="polite"></div>
-
-    <div class="host-about-preview" id="aboutPreview">
-      <figure>
-        <img id="aboutPreviewImage" alt="Podgląd zdjęcia sekcji O nas" hidden>
-        <span id="aboutNoImagePlaceholder">Brak zdjęcia — dodaj plik, by zaktualizować sekcję.</span>
-      </figure>
-      <p class="host-about-preview__text" id="aboutPreviewText"></p>
-    </div>
-  </section>
-
-  <section id="products" class="products-section">
-  <h2>Dostępne wypieki</h2>
-  <div id="productGrid" class="product-grid"></div>
-  </section>
+    <section id="products" class="products-section glass-panel host-card host-card--wide">
+      <h2>Dostępne wypieki</h2>
+      <div id="productGrid" class="product-grid"></div>
+    </section>
+  </main>
 
   <script src="host.js"></script>
 </body>

@@ -140,12 +140,55 @@ const AboutContent = mongoose.model('AboutContent', new mongoose.Schema({
   heroText: { type: String, default: '' }
 }, { timestamps: true }));
 
+// In-memory caches for frequently accessed collections
+let cachedProducts = null;
+let cachedProductsFetchedAt = 0;
+let cachedCategories = null;
+let cachedCategoriesFetchedAt = 0;
+const CACHE_TTL_MS = 30 * 1000;
+
+function getCachedValue(cacheRef, timestampRef) {
+  if (!cacheRef) {
+    return null;
+  }
+  if (Date.now() - timestampRef > CACHE_TTL_MS) {
+    return null;
+  }
+  return cacheRef;
+}
+
+function setProductsCache(data) {
+  cachedProducts = data;
+  cachedProductsFetchedAt = Date.now();
+}
+
+function setCategoriesCache(data) {
+  cachedCategories = data;
+  cachedCategoriesFetchedAt = Date.now();
+}
+
+function invalidateProductsCache() {
+  cachedProducts = null;
+  cachedProductsFetchedAt = 0;
+}
+
+function invalidateCategoriesCache() {
+  cachedCategories = null;
+  cachedCategoriesFetchedAt = 0;
+}
+
 // API ENDPOINTY
 
 // Pobierz wszystkie produkty
 app.get('/api/products', async (req, res) => {
   try {
-    const products = await Product.find();
+    const cached = getCachedValue(cachedProducts, cachedProductsFetchedAt);
+    if (cached) {
+      return res.json(cached);
+    }
+
+    const products = await Product.find().lean();
+    setProductsCache(products);
     res.json(products);
   } catch (err) {
     res.status(500).json({ error: 'Błąd pobierania produktów' });
@@ -204,6 +247,7 @@ app.post('/api/products', upload.single('image'), async (req, res) => {
     });
 
     await product.save();
+    invalidateProductsCache();
     res.json(product);
   } catch (err) {
     console.error(err);
@@ -243,7 +287,13 @@ app.post('/api/about', upload.single('aboutImage'), async (req, res) => {
 // Pobierz wszystkie kategorie
 app.get('/api/categories', async (req, res) => {
   try {
-    const categories = await Category.find().sort({ order: 1, name: 1 });
+    const cached = getCachedValue(cachedCategories, cachedCategoriesFetchedAt);
+    if (cached) {
+      return res.json(cached);
+    }
+
+    const categories = await Category.find().sort({ order: 1, name: 1 }).lean();
+    setCategoriesCache(categories);
     res.json(categories);
   } catch (err) {
     res.status(500).json({ error: 'Błąd pobierania kategorii' });
@@ -258,6 +308,7 @@ app.post('/api/categories', async (req, res) => {
     const nextOrder = lastCategory && typeof lastCategory.order === 'number' ? lastCategory.order + 1 : 0;
     const category = new Category({ name, order: nextOrder });
     await category.save();
+    invalidateCategoriesCache();
     res.json(category);
   } catch (err) {
     res.status(500).json({ error: 'Błąd dodawania kategorii' });
@@ -268,6 +319,7 @@ app.post('/api/categories', async (req, res) => {
 app.delete('/api/categories/:id', async (req, res) => {
   try {
     await Category.findByIdAndDelete(req.params.id);
+    invalidateCategoriesCache();
     res.json({ message: 'Kategoria usunięta' });
   } catch (err) {
     res.status(500).json({ error: 'Błąd usuwania kategorii' });
@@ -293,7 +345,8 @@ app.put('/api/categories/reorder', async (req, res) => {
       await Category.bulkWrite(bulkOps);
     }
 
-    const categories = await Category.find().sort({ order: 1, name: 1 });
+    const categories = await Category.find().sort({ order: 1, name: 1 }).lean();
+    setCategoriesCache(categories);
     res.json(categories);
   } catch (err) {
     console.error('Błąd zmiany kolejności kategorii:', err);
@@ -521,6 +574,7 @@ app.delete('/api/products/:id', async (req, res) => {
     }
 
     await product.deleteOne();
+    invalidateProductsCache();
     res.json({ message: '✅ Produkt usunięty' });
   } catch (err) {
     console.error(err);

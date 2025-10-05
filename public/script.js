@@ -73,18 +73,32 @@ if (typeof document !== 'undefined') {
 let cart = JSON.parse(sessionStorage.getItem('cart')) || [];
 const cartCount = document.getElementById('cartCount');
 
+const PRODUCTS_CACHE_KEY = 'chachor.productsCache';
+const PRODUCTS_CACHE_TTL = 5 * 60 * 1000;
+
 let productsDataPromise = null;
+let cachedProductsData = readProductsCache();
 
 function ensureProductsData(forceRefresh = false) {
   if (forceRefresh) {
     productsDataPromise = null;
+    cachedProductsData = null;
+    try {
+      sessionStorage.removeItem(PRODUCTS_CACHE_KEY);
+    } catch (err) {
+      // ignore storage errors
+    }
   }
 
   if (!productsDataPromise) {
-    productsDataPromise = loadProductsData().catch((error) => {
-      productsDataPromise = null;
-      throw error;
-    });
+    if (cachedProductsData) {
+      productsDataPromise = Promise.resolve(cachedProductsData);
+    } else {
+      productsDataPromise = loadProductsData().catch((error) => {
+        productsDataPromise = null;
+        throw error;
+      });
+    }
   }
 
   return productsDataPromise;
@@ -96,7 +110,10 @@ async function loadProductsData() {
     requestJson('/api/products', 'produkty')
   ]);
 
-  return { categories, products };
+  const payload = { categories, products };
+  cachedProductsData = payload;
+  writeProductsCache(payload);
+  return payload;
 }
 
 async function requestJson(url, label) {
@@ -110,6 +127,42 @@ async function requestJson(url, label) {
 }
 
 ensureProductsData().catch(() => {});
+
+function readProductsCache() {
+  try {
+    const raw = sessionStorage.getItem(PRODUCTS_CACHE_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') {
+      return null;
+    }
+    if (typeof parsed.timestamp !== 'number' || !Array.isArray(parsed.categories) || !Array.isArray(parsed.products)) {
+      return null;
+    }
+    if (Date.now() - parsed.timestamp > PRODUCTS_CACHE_TTL) {
+      sessionStorage.removeItem(PRODUCTS_CACHE_KEY);
+      return null;
+    }
+    return { categories: parsed.categories, products: parsed.products };
+  } catch (err) {
+    return null;
+  }
+}
+
+function writeProductsCache(data) {
+  try {
+    const payload = {
+      timestamp: Date.now(),
+      categories: data.categories,
+      products: data.products
+    };
+    sessionStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify(payload));
+  } catch (err) {
+    // ignore storage errors
+  }
+}
 
 function parseAvailabilityValue(value) {
   if (Array.isArray(value)) {
@@ -190,10 +243,20 @@ async function fetchProducts(forceRefresh = false) {
     return;
   }
 
+  const hasWarmCache = !forceRefresh && Boolean(cachedProductsData);
+  const shouldShowSkeleton = !hasWarmCache && productGrid.childElementCount === 0;
+  const hideSkeleton = shouldShowSkeleton ? showProductSkeleton() : null;
+
   try {
     const { categories, products } = await ensureProductsData(forceRefresh);
+    if (hideSkeleton) {
+      hideSkeleton();
+    }
     renderProductsByCategory(categories, products);
   } catch (err) {
+    if (hideSkeleton) {
+      hideSkeleton();
+    }
     console.error('Błąd pobierania produktów:', err);
     productGrid.innerHTML = '<p class="error-message">Nie udało się załadować produktów.</p>';
   }
@@ -204,7 +267,10 @@ function renderProductsByCategory(categories, products) {
     return;
   }
 
+  productGrid.classList.remove('is-loading');
   productGrid.innerHTML = '';
+  const fragment = document.createDocumentFragment();
+  let appended = false;
 
   const categorized = new Map();
   categories.forEach((category) => {
@@ -227,21 +293,27 @@ function renderProductsByCategory(categories, products) {
     if (!items.length) {
       return;
     }
-    productGrid.appendChild(createCategorySection(category.name, items));
+    fragment.appendChild(createCategorySection(category.name, items));
+    appended = true;
   });
 
   if (uncategorized.length) {
-    productGrid.appendChild(createCategorySection('Pozostałe', uncategorized));
+    fragment.appendChild(createCategorySection('Pozostałe', uncategorized));
+    appended = true;
   }
 
-  if (!productGrid.children.length) {
+  if (!appended) {
     productGrid.innerHTML = '<p class="empty-state">Brak produktów do wyświetlenia.</p>';
+    return;
   }
+
+  productGrid.appendChild(fragment);
+  applyCategoryFadeIn();
 }
 
 function createCategorySection(title, items) {
   const section = document.createElement('section');
-  section.classList.add('category-group');
+  section.classList.add('category-group', 'category-group--pending');
 
   const heading = document.createElement('h3');
   heading.classList.add('category-title');
@@ -250,13 +322,107 @@ function createCategorySection(title, items) {
 
   const list = document.createElement('div');
   list.classList.add('category-products');
-
+  const cardsFragment = document.createDocumentFragment();
   items.forEach((product) => {
-    list.appendChild(createProductCard(product));
+    cardsFragment.appendChild(createProductCard(product));
   });
+  list.appendChild(cardsFragment);
 
   section.appendChild(list);
   return section;
+}
+
+function showProductSkeleton(sectionCount = 2, cardsPerSection = 3) {
+  if (!productGrid) {
+    return null;
+  }
+
+  productGrid.classList.add('is-loading');
+  productGrid.innerHTML = '';
+
+  const fragment = document.createDocumentFragment();
+  for (let sectionIndex = 0; sectionIndex < sectionCount; sectionIndex += 1) {
+    const section = document.createElement('section');
+    section.classList.add('category-group', 'category-group--skeleton');
+
+    const heading = document.createElement('div');
+    heading.classList.add('category-title', 'skeleton-box', 'skeleton-box--heading');
+    section.appendChild(heading);
+
+    const list = document.createElement('div');
+    list.classList.add('category-products', 'category-products--skeleton');
+    for (let cardIndex = 0; cardIndex < cardsPerSection; cardIndex += 1) {
+      list.appendChild(createSkeletonCard());
+    }
+    section.appendChild(list);
+
+    fragment.appendChild(section);
+  }
+
+  productGrid.appendChild(fragment);
+
+  return () => {
+    if (!productGrid) {
+      return;
+    }
+    productGrid.classList.remove('is-loading');
+  };
+}
+
+function createSkeletonCard() {
+  const card = document.createElement('div');
+  card.classList.add('product-card', 'product-card--skeleton');
+
+  const thumb = document.createElement('div');
+  thumb.classList.add('product-card__skeleton-thumb', 'skeleton-box');
+  card.appendChild(thumb);
+
+  const info = document.createElement('div');
+  info.classList.add('product-info', 'product-info--skeleton');
+
+  const title = document.createElement('div');
+  title.classList.add('skeleton-box', 'skeleton-box--line', 'skeleton-box--title');
+  info.appendChild(title);
+
+  const textLine = document.createElement('div');
+  textLine.classList.add('skeleton-box', 'skeleton-box--line');
+  info.appendChild(textLine);
+
+  const price = document.createElement('div');
+  price.classList.add('skeleton-box', 'skeleton-box--line', 'skeleton-box--price');
+  info.appendChild(price);
+
+  const button = document.createElement('div');
+  button.classList.add('skeleton-box', 'skeleton-box--button');
+  info.appendChild(button);
+
+  card.appendChild(info);
+
+  const availability = document.createElement('div');
+  availability.classList.add('product-availability-grid', 'product-availability-grid--skeleton');
+  for (let i = 0; i < 3; i += 1) {
+    const badge = document.createElement('span');
+    badge.classList.add('skeleton-box', 'skeleton-box--badge');
+    availability.appendChild(badge);
+  }
+  card.appendChild(availability);
+
+  return card;
+}
+
+function applyCategoryFadeIn() {
+  if (!productGrid) {
+    return;
+  }
+
+  requestAnimationFrame(() => {
+    const pendingSections = Array.from(productGrid.querySelectorAll('.category-group--pending'));
+    pendingSections.forEach((section, index) => {
+      section.style.setProperty('--fade-delay', `${index * 60}ms`);
+      section.classList.remove('category-group--pending');
+      section.classList.add('category-group--visible');
+    });
+  });
 }
 
 function createProductCard(product) {

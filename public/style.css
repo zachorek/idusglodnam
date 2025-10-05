@@ -19,7 +19,7 @@ body.page-intro-active .logo,
 body.page-intro-active .order-menu,
 body.page-intro-active .order-intro,
 body.page-intro-active .order-hero {
-  transition: opacity 3s ease, transform 3s ease;
+  transition: opacity 4s ease 0.5s, transform 4s ease 0.5s;
   transform: translateZ(0);
 }
 

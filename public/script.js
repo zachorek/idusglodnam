@@ -73,6 +73,44 @@ if (typeof document !== 'undefined') {
 let cart = JSON.parse(sessionStorage.getItem('cart')) || [];
 const cartCount = document.getElementById('cartCount');
 
+let productsDataPromise = null;
+
+function ensureProductsData(forceRefresh = false) {
+  if (forceRefresh) {
+    productsDataPromise = null;
+  }
+
+  if (!productsDataPromise) {
+    productsDataPromise = loadProductsData().catch((error) => {
+      productsDataPromise = null;
+      throw error;
+    });
+  }
+
+  return productsDataPromise;
+}
+
+async function loadProductsData() {
+  const [categories, products] = await Promise.all([
+    requestJson('/api/categories', 'kategorie'),
+    requestJson('/api/products', 'produkty')
+  ]);
+
+  return { categories, products };
+}
+
+async function requestJson(url, label) {
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(`Błąd odpowiedzi serwera dla zasobu: ${label || url}`);
+  }
+
+  return response.json();
+}
+
+ensureProductsData().catch(() => {});
+
 function parseAvailabilityValue(value) {
   if (Array.isArray(value)) {
     return value;
@@ -147,24 +185,13 @@ function buildAvailabilityTiles(days) {
   return container;
 }
 
-async function fetchProducts() {
+async function fetchProducts(forceRefresh = false) {
   if (!productGrid) {
     return;
   }
 
   try {
-    const [categoriesRes, productsRes] = await Promise.all([
-      fetch('/api/categories'),
-      fetch('/api/products')
-    ]);
-
-    if (!categoriesRes.ok || !productsRes.ok) {
-      throw new Error('Błąd odpowiedzi serwera');
-    }
-
-    const categories = await categoriesRes.json();
-    const products = await productsRes.json();
-
+    const { categories, products } = await ensureProductsData(forceRefresh);
     renderProductsByCategory(categories, products);
   } catch (err) {
     console.error('Błąd pobierania produktów:', err);
@@ -484,9 +511,23 @@ function closeCartActionModal() {
   lastCartActionFocusedElement = null;
 }
 
-window.addEventListener('DOMContentLoaded', () => {
+let storefrontInitialized = false;
+
+function initializeStorefront() {
+  if (storefrontInitialized) {
+    return;
+  }
+  storefrontInitialized = true;
+
   if (productGrid) {
     fetchProducts();
   }
+
   updateCartCount();
-});
+}
+
+if (document.readyState === 'loading') {
+  window.addEventListener('DOMContentLoaded', initializeStorefront, { once: true });
+} else {
+  initializeStorefront();
+}

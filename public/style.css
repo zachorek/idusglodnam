@@ -13,6 +13,23 @@ body {
   text-align: center;
 }
 
+/* Global page transition */
+body.page-transition-ready {
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 0.35s ease, transform 0.35s ease;
+}
+
+body.page-transition-ready.page-transition-enter {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+body.page-transition-ready.page-transition-leave {
+  opacity: 0;
+  transform: translateY(-12px);
+}
+
 /* Page intro animation targets */
 body.page-intro-active .navbar,
 body.page-intro-active .logo,

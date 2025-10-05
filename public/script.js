@@ -10,6 +10,11 @@ const cartActionContinue = document.getElementById('cartActionContinue');
 const PRODUCT_DAY_LABELS = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela'];
 const PRODUCT_DAY_ABBREVIATIONS = ['PN', 'WT', 'ŚR', 'CZ', 'PT', 'SO', 'ND'];
 const MAX_AVAILABILITY_TILES = 6;
+const PAGE_TRANSITION_DURATION = 350;
+
+let categoryRevealObserver = null;
+let pageIntroScheduled = false;
+let pageTransitionsInitialized = false;
 
 let lastFocusedElement = null;
 let lastCartActionFocusedElement = null;
@@ -55,6 +60,7 @@ if (cartActionContinue) {
 }
 
 if (typeof document !== 'undefined') {
+  setupPageTransitions();
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
       if (cartActionModal && cartActionModal.classList.contains('open')) {
@@ -460,9 +466,6 @@ function applyCategoryFadeIn() {
   });
 }
 
-let categoryRevealObserver = null;
-let pageIntroScheduled = false;
-
 function ensureCategoryRevealObserver() {
   if (categoryRevealObserver || typeof window === 'undefined') {
     return categoryRevealObserver;
@@ -520,6 +523,92 @@ function schedulePageIntroReveal() {
       }
     });
   });
+}
+
+function setupPageTransitions() {
+  if (pageTransitionsInitialized || !document.body) {
+    return;
+  }
+  pageTransitionsInitialized = true;
+
+  document.body.classList.remove('page-transition-leave');
+  document.body.classList.add('page-transition-ready');
+
+  const activate = () => {
+    requestAnimationFrame(() => {
+      document.body.classList.add('page-transition-enter');
+    });
+  };
+
+  activate();
+
+  window.addEventListener('pageshow', (event) => {
+    if (event.persisted) {
+      document.body.classList.remove('page-transition-enter');
+      document.body.classList.remove('page-transition-leave');
+      activate();
+    }
+  });
+
+  document.addEventListener('click', handleLinkTransition, true);
+}
+
+function handleLinkTransition(event) {
+  if (event.defaultPrevented) {
+    return;
+  }
+
+  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+    return;
+  }
+
+  const anchor = event.target instanceof Element ? event.target.closest('a[href]') : null;
+  if (!anchor) {
+    return;
+  }
+
+  const href = anchor.getAttribute('href');
+  if (!href || href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('tel:')) {
+    return;
+  }
+
+  if (anchor.target && anchor.target !== '_self') {
+    return;
+  }
+
+  const destination = new URL(href, window.location.href);
+  if (destination.origin !== window.location.origin) {
+    return;
+  }
+
+  const samePage = destination.pathname === window.location.pathname
+    && destination.search === window.location.search
+    && destination.hash === window.location.hash;
+  if (samePage) {
+    return;
+  }
+
+  event.preventDefault();
+  startPageLeave(() => {
+    window.location.href = destination.href;
+  });
+}
+
+function startPageLeave(callback) {
+  if (!document.body) {
+    callback();
+    return;
+  }
+
+  if (document.body.classList.contains('page-transition-leave')) {
+    callback();
+    return;
+  }
+
+  document.body.classList.remove('page-transition-enter');
+  document.body.classList.add('page-transition-leave');
+
+  window.setTimeout(callback, PAGE_TRANSITION_DURATION);
 }
 
 function createProductCard(product) {

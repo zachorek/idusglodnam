@@ -72,6 +72,11 @@ if (typeof document !== 'undefined') {
 
 let cart = JSON.parse(sessionStorage.getItem('cart')) || [];
 const cartCount = document.getElementById('cartCount');
+const orderLayout = document.querySelector('.order-layout');
+
+if (orderLayout && document.body && !document.body.classList.contains('page-intro-active')) {
+  document.body.classList.add('page-intro-active');
+}
 
 const PRODUCTS_CACHE_KEY = 'chachor.productsCache';
 const PRODUCTS_CACHE_TTL = 5 * 60 * 1000;
@@ -323,8 +328,11 @@ function createCategorySection(title, items) {
   const list = document.createElement('div');
   list.classList.add('category-products');
   const cardsFragment = document.createDocumentFragment();
-  items.forEach((product) => {
-    cardsFragment.appendChild(createProductCard(product));
+  items.forEach((product, index) => {
+    const card = createProductCard(product);
+    card.classList.add('product-card--animated', 'product-card--pending');
+    card.style.setProperty('--card-delay', `${index * 110}ms`);
+    cardsFragment.appendChild(card);
   });
   list.appendChild(cardsFragment);
 
@@ -341,9 +349,10 @@ function showProductSkeleton(sectionCount = 2, cardsPerSection = 3) {
   productGrid.innerHTML = '';
 
   const fragment = document.createDocumentFragment();
+  let cardCounter = 0;
   for (let sectionIndex = 0; sectionIndex < sectionCount; sectionIndex += 1) {
     const section = document.createElement('section');
-    section.classList.add('category-group', 'category-group--skeleton');
+    section.classList.add('category-group', 'category-group--skeleton', 'category-group--pending');
 
     const heading = document.createElement('div');
     heading.classList.add('category-title', 'skeleton-box', 'skeleton-box--heading');
@@ -352,7 +361,8 @@ function showProductSkeleton(sectionCount = 2, cardsPerSection = 3) {
     const list = document.createElement('div');
     list.classList.add('category-products', 'category-products--skeleton');
     for (let cardIndex = 0; cardIndex < cardsPerSection; cardIndex += 1) {
-      list.appendChild(createSkeletonCard());
+      list.appendChild(createSkeletonCard(cardCounter));
+      cardCounter += 1;
     }
     section.appendChild(list);
 
@@ -360,6 +370,16 @@ function showProductSkeleton(sectionCount = 2, cardsPerSection = 3) {
   }
 
   productGrid.appendChild(fragment);
+
+  requestAnimationFrame(() => {
+    const skeletonSections = Array.from(productGrid.querySelectorAll('.category-group--skeleton.category-group--pending'));
+    skeletonSections.forEach((section, index) => {
+      section.style.setProperty('--fade-delay', `${index * 80}ms`);
+      section.classList.remove('category-group--pending');
+      section.classList.add('category-group--visible');
+      triggerCardAnimations(section);
+    });
+  });
 
   return () => {
     if (!productGrid) {
@@ -369,9 +389,10 @@ function showProductSkeleton(sectionCount = 2, cardsPerSection = 3) {
   };
 }
 
-function createSkeletonCard() {
+function createSkeletonCard(globalIndex) {
   const card = document.createElement('div');
-  card.classList.add('product-card', 'product-card--skeleton');
+  card.classList.add('product-card', 'product-card--skeleton', 'product-card--animated', 'product-card--pending');
+  card.style.setProperty('--card-delay', `${globalIndex * 90}ms`);
 
   const thumb = document.createElement('div');
   thumb.classList.add('product-card__skeleton-thumb', 'skeleton-box');
@@ -415,12 +436,88 @@ function applyCategoryFadeIn() {
     return;
   }
 
+  const pendingSections = Array.from(productGrid.querySelectorAll('.category-group--pending'));
+  if (!pendingSections.length) {
+    return;
+  }
+
+  pendingSections.forEach((section, index) => {
+    section.style.setProperty('--fade-delay', `${index * 60}ms`);
+  });
+
+  const observer = ensureCategoryRevealObserver();
+  if (observer) {
+    pendingSections.forEach((section) => observer.observe(section));
+    return;
+  }
+
   requestAnimationFrame(() => {
-    const pendingSections = Array.from(productGrid.querySelectorAll('.category-group--pending'));
-    pendingSections.forEach((section, index) => {
-      section.style.setProperty('--fade-delay', `${index * 60}ms`);
+    pendingSections.forEach((section) => {
       section.classList.remove('category-group--pending');
       section.classList.add('category-group--visible');
+      triggerCardAnimations(section);
+    });
+  });
+}
+
+let categoryRevealObserver = null;
+let pageIntroScheduled = false;
+
+function ensureCategoryRevealObserver() {
+  if (categoryRevealObserver || typeof window === 'undefined') {
+    return categoryRevealObserver;
+  }
+
+  if (!('IntersectionObserver' in window)) {
+    return null;
+  }
+
+  categoryRevealObserver = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) {
+        return;
+      }
+
+      const section = entry.target;
+      section.classList.remove('category-group--pending');
+      section.classList.add('category-group--visible');
+      triggerCardAnimations(section);
+      categoryRevealObserver.unobserve(section);
+    });
+  }, {
+    root: null,
+    rootMargin: '0px 0px -10% 0px',
+    threshold: 0.1
+  });
+
+  return categoryRevealObserver;
+}
+
+function triggerCardAnimations(section) {
+  const cards = section.querySelectorAll('.product-card--pending');
+  if (!cards.length) {
+    return;
+  }
+
+  requestAnimationFrame(() => {
+    cards.forEach((card) => {
+      card.classList.remove('product-card--pending');
+      card.classList.add('product-card--visible');
+    });
+  });
+}
+
+function schedulePageIntroReveal() {
+  if (!orderLayout || pageIntroScheduled) {
+    return;
+  }
+  pageIntroScheduled = true;
+
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      if (document.body) {
+        document.body.classList.add('page-intro-ready');
+      }
     });
   });
 }
@@ -690,6 +787,7 @@ function initializeStorefront() {
   }
 
   updateCartCount();
+  schedulePageIntroReveal();
 }
 
 if (document.readyState === 'loading') {

@@ -76,7 +76,23 @@ if (typeof document !== 'undefined') {
   });
 }
 
-let cart = JSON.parse(sessionStorage.getItem('cart')) || [];
+let cart = [];
+
+function readStoredCart() {
+  try {
+    const raw = sessionStorage.getItem('cart');
+    if (!raw) {
+      return [];
+    }
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err) {
+    console.warn('Nie można odczytać koszyka z pamięci sesji:', err);
+    return [];
+  }
+}
+
+cart = readStoredCart();
 const cartCount = document.getElementById('cartCount');
 const orderLayout = document.querySelector('.order-layout');
 
@@ -815,7 +831,11 @@ function addToCart(id, price, name) {
 }
 
 function saveCart() {
-  sessionStorage.setItem('cart', JSON.stringify(cart));
+  try {
+    sessionStorage.setItem('cart', JSON.stringify(cart));
+  } catch (err) {
+    console.warn('Nie można zapisać koszyka w pamięci sesji:', err);
+  }
   updateCartCount();
 }
 

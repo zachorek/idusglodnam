@@ -470,14 +470,20 @@ function applyCategoryFadeIn() {
   const observer = ensureCategoryRevealObserver();
   if (observer) {
     pendingSections.forEach((section) => observer.observe(section));
+
+    setTimeout(() => {
+      pendingSections.forEach((section) => {
+        if (section.classList.contains('category-group--pending')) {
+          revealCategorySection(section);
+        }
+      });
+    }, 800);
     return;
   }
 
   requestAnimationFrame(() => {
     pendingSections.forEach((section) => {
-      section.classList.remove('category-group--pending');
-      section.classList.add('category-group--visible');
-      triggerCardAnimations(section);
+      revealCategorySection(section);
     });
   });
 }
@@ -498,9 +504,7 @@ function ensureCategoryRevealObserver() {
       }
 
       const section = entry.target;
-      section.classList.remove('category-group--pending');
-      section.classList.add('category-group--visible');
-      triggerCardAnimations(section);
+      revealCategorySection(section);
       categoryRevealObserver.unobserve(section);
     });
   }, {
@@ -524,6 +528,12 @@ function triggerCardAnimations(section) {
       card.classList.add('product-card--visible');
     });
   });
+}
+
+function revealCategorySection(section) {
+  section.classList.remove('category-group--pending');
+  section.classList.add('category-group--visible');
+  triggerCardAnimations(section);
 }
 
 function schedulePageIntroReveal() {

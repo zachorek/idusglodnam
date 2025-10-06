@@ -1161,8 +1161,14 @@ function initializeStockManagement() {
 function setupStockEventListeners() {
   if (daySelect) {
     daySelect.addEventListener('change', (e) => {
-      currentDayIndex = parseInt(e.target.value);
+      const selectedValue = e.target.value;
+      if (selectedValue === '') {
+        showAllProductsInStock();
+        return;
+      }
+      currentDayIndex = parseInt(selectedValue);
       loadDayStock(currentDayIndex);
+      filterProductsInStockByDay(currentDayIndex);
     });
   }
 
@@ -1426,6 +1432,41 @@ function showStockMessage(message, type) {
       messageEl.remove();
     }
   }, 3000);
+}
+
+function filterProductsInStockByDay(dayIndex) {
+  if (!productsStock) return;
+
+  const productItems = productsStock.querySelectorAll('.product-stock-item');
+
+  productItems.forEach(item => {
+    const productId = item.querySelector('.stock-input')?.dataset.productId;
+    if (!productId) return;
+
+    // Find the product in our products array
+    const product = products.find(p => p._id === productId);
+    if (!product) return;
+
+    // Check if product is available on the selected day
+    const isAvailableOnDay = product.availabilityDays &&
+                            Array.isArray(product.availabilityDays) &&
+                            product.availabilityDays.includes(dayIndex);
+
+    if (isAvailableOnDay) {
+      item.style.display = 'block';
+    } else {
+      item.style.display = 'none';
+    }
+  });
+}
+
+function showAllProductsInStock() {
+  if (!productsStock) return;
+
+  const productItems = productsStock.querySelectorAll('.product-stock-item');
+  productItems.forEach(item => {
+    item.style.display = 'block';
+  });
 }
 
 // Initialize stock management when page loads

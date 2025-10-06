@@ -140,6 +140,16 @@ const AboutContent = mongoose.model('AboutContent', new mongoose.Schema({
   heroText: { type: String, default: '' }
 }, { timestamps: true }));
 
+// Per-product per-day stock (capacity and reserved)
+const productStockSchema = new mongoose.Schema({
+  productId: { type: String, required: true, index: true },
+  dayIndex: { type: Number, required: true, min: 0, max: 6, index: true },
+  capacity: { type: Number, required: true, min: 0, default: 0 },
+  reserved: { type: Number, required: true, min: 0, default: 0 }
+}, { timestamps: true });
+productStockSchema.index({ productId: 1, dayIndex: 1 }, { unique: true });
+const ProductStock = mongoose.model('ProductStock', productStockSchema);
+
 // In-memory caches for frequently accessed collections
 let cachedProducts = null;
 let cachedProductsFetchedAt = 0;
@@ -208,6 +218,144 @@ app.get('/api/about', async (req, res) => {
   } catch (err) {
     console.error('Błąd pobierania sekcji O nas:', err);
     res.status(500).json({ error: 'Błąd pobierania sekcji O nas' });
+  }
+});
+
+// STOCK API
+// Remaining stock for all products on a given day
+app.get('/api/stock/:dayIndex', async (req, res) => {
+  const dayIndex = Number(req.params.dayIndex);
+  if (!Number.isInteger(dayIndex) || dayIndex < 0 || dayIndex > 6) {
+    return res.status(400).json({ error: 'Nieprawidłowy dzień tygodnia' });
+  }
+  try {
+    const [products, stock] = await Promise.all([
+      Product.find().lean(),
+      ProductStock.find({ dayIndex }).lean()
+    ]);
+    const stockMap = new Map(stock.map((s) => [String(s.productId), s]));
+    const result = products.map((p) => {
+      const s = stockMap.get(String(p._id));
+      const remaining = s ? Math.max(0, Number(s.capacity) - Number(s.reserved)) : 0;
+      return { productId: String(p._id), name: p.name, remaining };
+    });
+    res.json(result);
+  } catch (err) {
+    console.error('Błąd pobierania stanów magazynowych:', err);
+    res.status(500).json({ error: 'Błąd pobierania stanów magazynowych' });
+  }
+});
+
+// Products available on a specific day
+app.get('/api/products/day/:dayIndex', async (req, res) => {
+  const dayIndex = Number(req.params.dayIndex);
+  if (!Number.isInteger(dayIndex) || dayIndex < 0 || dayIndex > 6) {
+    return res.status(400).json({ error: 'Nieprawidłowy dzień tygodnia' });
+  }
+  try {
+    const [products, stock] = await Promise.all([
+      Product.find().lean(),
+      ProductStock.find({ dayIndex }).lean()
+    ]);
+
+    const stockMap = new Map(stock.map((s) => [String(s.productId), s]));
+
+    // Filter products that have stock available on this day
+    const availableProducts = products.filter((product) => {
+      const stockInfo = stockMap.get(String(product._id));
+      if (!stockInfo) return false;
+      const remaining = Math.max(0, Number(stockInfo.capacity) - Number(stockInfo.reserved));
+      return remaining > 0;
+    });
+
+    res.json(availableProducts);
+  } catch (err) {
+    console.error('Błąd pobierania produktów na dzień:', err);
+    res.status(500).json({ error: 'Błąd pobierania produktów na dzień' });
+  }
+});
+
+// Upsert capacities in bulk: [{ productId, dayIndex, capacity }]
+app.put('/api/stock', async (req, res) => {
+  const items = Array.isArray(req.body) ? req.body : [];
+  const normalized = items
+    .map((item) => ({
+      productId: item && item.productId ? String(item.productId) : '',
+      dayIndex: Number(item && item.dayIndex),
+      capacity: Math.max(0, Number(item && item.capacity))
+    }))
+    .filter((i) => i.productId && Number.isInteger(i.dayIndex) && i.dayIndex >= 0 && i.dayIndex <= 6 && Number.isFinite(i.capacity));
+
+  if (!normalized.length) {
+    return res.status(400).json({ error: 'Brak danych do zapisania' });
+  }
+
+  try {
+    const ops = normalized.map((i) => ({
+      updateOne: {
+        filter: { productId: i.productId, dayIndex: i.dayIndex },
+        update: { $set: { capacity: i.capacity }, $setOnInsert: { reserved: 0 } },
+        upsert: true
+      }
+    }));
+    if (ops.length) {
+      await ProductStock.bulkWrite(ops, { ordered: false });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Błąd zapisu stanów magazynowych:', err);
+    res.status(500).json({ error: 'Błąd zapisu stanów magazynowych' });
+  }
+});
+
+// Stock overview for all products and days
+app.get('/api/stock/overview', async (req, res) => {
+  try {
+    const [products, stock] = await Promise.all([
+      Product.find().lean(),
+      ProductStock.find().lean()
+    ]);
+
+    const stockMap = new Map();
+    stock.forEach(s => {
+      const key = `${s.productId}-${s.dayIndex}`;
+      stockMap.set(key, s.capacity);
+    });
+
+    const overview = products.map(product => {
+      const stock = [];
+      for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+        const key = `${product._id}-${dayIndex}`;
+        stock.push(stockMap.get(key) || 0);
+      }
+      return {
+        name: product.name,
+        stock: stock
+      };
+    });
+
+    res.json(overview);
+  } catch (err) {
+    console.error('Błąd pobierania przeglądu stanów:', err);
+    res.status(500).json({ error: 'Błąd pobierania przeglądu stanów' });
+  }
+});
+
+// Get per-day capacities for a product
+app.get('/api/stock/capacity/:productId', async (req, res) => {
+  const productId = String(req.params.productId || '');
+  if (!productId) return res.status(400).json({ error: 'Brak identyfikatora produktu' });
+  try {
+    const docs = await ProductStock.find({ productId }).lean();
+    const byDay = new Map(docs.map((d) => [Number(d.dayIndex), d]));
+    const result = Array.from({ length: 7 }).map((_, dayIndex) => {
+      const d = byDay.get(dayIndex);
+      return { dayIndex, capacity: d ? Number(d.capacity) : 0, reserved: d ? Number(d.reserved) : 0 };
+    });
+    res.json(result);
+  } catch (err) {
+    console.error('Błąd pobierania pojemności produktu:', err);
+    res.status(500).json({ error: 'Błąd pobierania pojemności produktu' });
   }
 });
 
@@ -510,12 +658,17 @@ const Order = mongoose.model("Order", new mongoose.Schema({
   discountAmount: { type: Number, default: 0 },
   totalBeforeDiscount: { type: Number, default: 0 },
   totalAfterDiscount: { type: Number, default: 0 },
+  pickupDayIndex: { type: Number, min: 0, max: 6 },
   createdAt: { type: Date, default: Date.now }
 }));
 
 app.post("/api/orders", async (req, res) => {
   try {
     const products = Array.isArray(req.body.products) ? req.body.products : [];
+    const pickupDayIndex = Number(req.body.pickupDayIndex);
+    if (!Number.isInteger(pickupDayIndex) || pickupDayIndex < 0 || pickupDayIndex > 6) {
+      return res.status(400).json({ error: 'Wybierz dzień odbioru (0-6).' });
+    }
 
     const normalizedProducts = products
       .map((product) => ({
@@ -544,12 +697,33 @@ app.post("/api/orders", async (req, res) => {
     const discountAmount = Number((totalBeforeDiscount * discountPercent / 100).toFixed(2));
     const totalAfterDiscount = Math.max(0, Number((totalBeforeDiscount - discountAmount).toFixed(2)));
 
+    // Reserve stock atomically for the selected day
+    const insufficient = [];
+    for (const item of normalizedProducts) {
+      const productId = String(item.id || '');
+      const qty = Number(item.quantity) || 0;
+      if (!productId || qty <= 0) continue;
+      const updated = await ProductStock.findOneAndUpdate(
+        { productId, dayIndex: pickupDayIndex, $expr: { $lte: [ { $add: ['$reserved', qty] }, '$capacity' ] } },
+        { $inc: { reserved: qty } },
+        { new: true }
+      );
+      if (!updated) {
+        insufficient.push(item.name || productId);
+      }
+    }
+
+    if (insufficient.length) {
+      return res.status(400).json({ error: `Brak wystarczającej ilości: ${insufficient.join(', ')} na wybrany dzień.` });
+    }
+
     const order = new Order({
       email: typeof req.body.email === 'string' ? req.body.email : '',
       phone: typeof req.body.phone === 'string' ? req.body.phone : '',
       comment: typeof req.body.comment === 'string' ? req.body.comment : '',
       payment: typeof req.body.payment === 'string' ? req.body.payment : '',
       products: normalizedProducts,
+      pickupDayIndex,
       discountCode,
       discountPercent,
       discountAmount,

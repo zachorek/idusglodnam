@@ -1681,7 +1681,8 @@ body.page-intro-active:not(.page-intro-ready) .order-hero {
 }
 
 .cart-field input,
-.cart-field textarea {
+.cart-field textarea,
+.cart-field select {
   padding: 12px 16px;
   border-radius: 14px;
   border: 1px solid rgba(231, 164, 104, 0.35);
@@ -1695,7 +1696,8 @@ body.page-intro-active:not(.page-intro-ready) .order-hero {
 }
 
 .cart-field input:focus,
-.cart-field textarea:focus {
+.cart-field textarea:focus,
+.cart-field select:focus {
   border-color: rgba(230, 126, 34, 0.8);
   box-shadow: 0 10px 20px rgba(230, 126, 34, 0.25);
   outline: none;
@@ -1962,6 +1964,140 @@ body.page-intro-active:not(.page-intro-ready) .order-hero {
   display: flex;
   flex-direction: column;
   gap: 24px;
+}
+
+/* Availability day picker box */
+.availability-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.availability-controls.glass-panel {
+  padding: 20px 24px;
+  border-radius: 20px;
+}
+
+.availability-stock {
+  flex: 1;
+  text-align: left;
+  color: #4a3426;
+}
+
+.availability-stock-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.availability-stock-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(255, 249, 242, 0.9);
+  border: 1px solid rgba(231, 164, 104, 0.28);
+}
+
+.availability-stock-name {
+  font-weight: 600;
+  color: #4a3426;
+}
+
+.availability-stock-qty {
+  font-weight: 700;
+  color: #e67e22;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .availability-controls {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+
+  .availability-controls .availability-field {
+    gap: 6px;
+  }
+}
+
+/* Calendar component */
+.calendar {
+  --cell-size: 42px;
+  display: grid;
+  gap: 8px;
+}
+
+.calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.calendar-title {
+  font-weight: 700;
+  color: #4a3426;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, var(--cell-size));
+  gap: 6px;
+}
+
+.calendar-weekday,
+.calendar-day {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--cell-size);
+  height: var(--cell-size);
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.calendar-weekday {
+  color: #8b6a4c;
+  font-size: 0.8rem;
+}
+
+.calendar-day {
+  cursor: pointer;
+  background: rgba(255, 249, 242, 0.9);
+  border: 1px solid rgba(231, 164, 104, 0.28);
+  color: #6f4f37;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.calendar-day:hover:not(.is-disabled):not(.is-selected) {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 18px rgba(230, 126, 34, 0.24);
+}
+
+.calendar-day.is-disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.calendar-day.is-selected {
+  background: linear-gradient(135deg, #e67e22, #ff9d4d);
+  color: #fff;
+  border-color: #e67e22;
+  box-shadow: 0 10px 24px rgba(230, 126, 34, 0.35);
+}
+
+@media (max-width: 540px) {
+  .calendar {
+    --cell-size: 36px;
+  }
 }
 
 .availability-grid {
@@ -2966,4 +3102,310 @@ body.page-intro-active:not(.page-intro-ready) .order-hero {
   .order-hero-button {
     width: 100%;
   }
+}
+
+/* Flatpickr calendar centering */
+.flatpickr-calendar {
+  margin: 0 auto !important;
+  position: relative !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+}
+
+.flatpickr-calendar.open {
+  margin: 0 auto !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+}
+
+#availabilityDate {
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+}
+
+#availabilityDate .flatpickr-calendar {
+  margin: 0 auto !important;
+  display: block !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+}
+
+#pickupDate {
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+}
+
+#pickupDate .flatpickr-calendar {
+  margin: 0 auto !important;
+  display: block !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+}
+
+/* Host stock management styles */
+.host-stock-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.host-title {
+  text-align: center;
+  color: #333;
+  margin-bottom: 30px;
+  font-size: 2rem;
+}
+
+.stock-section {
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 12px;
+  padding: 25px;
+  margin-bottom: 25px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+.stock-section h2 {
+  color: #333;
+  margin-bottom: 15px;
+  font-size: 1.5rem;
+}
+
+.stock-section p {
+  color: #666;
+  margin-bottom: 20px;
+}
+
+.stock-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.day-selector, .date-selector {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.day-selector label, .date-selector label {
+  font-weight: 600;
+  color: #333;
+  min-width: 120px;
+}
+
+.day-selector select, .date-selector input {
+  padding: 10px 15px;
+  border: 2px solid #e9ecef;
+  border-radius: 8px;
+  font-size: 1rem;
+  background: white;
+  transition: border-color 0.3s ease;
+}
+
+.day-selector select:focus, .date-selector input:focus {
+  outline: none;
+  border-color: #2196f3;
+}
+
+.products-stock {
+  display: grid;
+  gap: 15px;
+  margin: 20px 0;
+}
+
+.product-stock-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+}
+
+.product-info {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.product-name {
+  font-weight: 600;
+  color: #333;
+  font-size: 1.1rem;
+}
+
+.product-price {
+  color: #28a745;
+  font-weight: 500;
+}
+
+.stock-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.stock-control label {
+  font-weight: 500;
+  color: #333;
+}
+
+.stock-input {
+  width: 80px;
+  padding: 8px 12px;
+  border: 2px solid #e9ecef;
+  border-radius: 6px;
+  text-align: center;
+  font-size: 1rem;
+  transition: border-color 0.3s ease;
+}
+
+.stock-input:focus {
+  outline: none;
+  border-color: #2196f3;
+}
+
+.save-btn {
+  background: #2196f3;
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+  align-self: flex-start;
+}
+
+.save-btn:hover {
+  background: #1976d2;
+}
+
+.save-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.stock-overview {
+  margin-top: 20px;
+}
+
+.stock-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.stock-table th,
+.stock-table td {
+  padding: 12px 15px;
+  text-align: left;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.stock-table th {
+  background: #f8f9fa;
+  font-weight: 600;
+  color: #333;
+}
+
+.stock-table td {
+  color: #555;
+}
+
+.stock-table .product-name {
+  font-weight: 600;
+  color: #333;
+}
+
+.stock-message {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 12px 20px;
+  border-radius: 8px;
+  font-weight: 500;
+  z-index: 1000;
+  animation: slideIn 0.3s ease;
+}
+
+.stock-message.success {
+  background: #d4edda;
+  color: #155724;
+  border: 1px solid #c3e6cb;
+}
+
+.stock-message.error {
+  background: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@media (max-width: 768px) {
+  .host-stock-container {
+    padding: 15px;
+  }
+
+  .product-stock-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .stock-control {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .stock-table {
+    font-size: 0.9rem;
+  }
+
+  .stock-table th,
+  .stock-table td {
+    padding: 8px 10px;
+  }
+}
+
+/* Stock management section within host page */
+.stock-management-section {
+  margin-top: 30px;
+}
+
+.stock-subsection {
+  margin-bottom: 30px;
+  padding: 20px;
+  background: rgba(248, 249, 250, 0.8);
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+}
+
+.stock-subsection h3 {
+  color: #333;
+  margin-bottom: 10px;
+  font-size: 1.3rem;
+}
+
+.stock-subsection p {
+  color: #666;
+  margin-bottom: 15px;
+  font-size: 0.95rem;
 }

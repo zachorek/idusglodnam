@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Panel host - Chachor Piecze</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 </head>
 <body class="host-body">
   <script>
@@ -18,6 +19,7 @@
       <li><a href="/index">Zamów</a></li>
       <li><a href="/accessibility">Dostępność i odbiory</a></li>
       <li><a href="/about">O nas</a></li>
+      <li><a href="/host-stock">Zarządzanie stanami</a></li>
     </ul>
   </nav>
 
@@ -157,8 +159,68 @@
       <h2>Dostępne wypieki</h2>
       <div id="productGrid" class="product-grid"></div>
     </section>
+
+    <!-- Stock Management Section -->
+    <section class="stock-management-section glass-panel host-card host-card--wide">
+      <h2>Zarządzanie stanami magazynowymi</h2>
+
+      <!-- Day of week stock management -->
+      <div class="stock-subsection">
+        <h3>Ustawienia tygodniowe</h3>
+        <p>Ustaw domyślne ilości produktów dla każdego dnia tygodnia</p>
+
+        <div class="stock-controls">
+          <div class="day-selector">
+            <label for="daySelect">Wybierz dzień:</label>
+            <select id="daySelect">
+              <option value="0">Poniedziałek</option>
+              <option value="1">Wtorek</option>
+              <option value="2">Środa</option>
+              <option value="3">Czwartek</option>
+              <option value="4">Piątek</option>
+              <option value="5">Sobota</option>
+              <option value="6">Niedziela</option>
+            </select>
+          </div>
+
+          <div class="products-stock" id="productsStock">
+            <!-- Products will be loaded here -->
+          </div>
+
+          <button id="saveWeeklyStock" class="save-btn">Zapisz ustawienia tygodniowe</button>
+        </div>
+      </div>
+
+      <!-- Specific date stock management -->
+      <div class="stock-subsection">
+        <h3>Ustawienia dla konkretnej daty</h3>
+        <p>Modyfikuj ilości produktów dla wybranej daty</p>
+
+        <div class="stock-controls">
+          <div class="date-selector">
+            <label for="dateSelect">Wybierz datę:</label>
+            <input type="text" id="dateSelect" placeholder="Wybierz datę">
+          </div>
+
+          <div class="products-stock" id="dateProductsStock">
+            <!-- Products will be loaded here -->
+          </div>
+
+          <button id="saveDateStock" class="save-btn">Zapisz ustawienia dla daty</button>
+        </div>
+      </div>
+
+      <!-- Current stock overview -->
+      <div class="stock-subsection">
+        <h3>Przegląd stanów</h3>
+        <div id="stockOverview" class="stock-overview">
+          <!-- Stock overview will be loaded here -->
+        </div>
+      </div>
+    </section>
   </main>
 
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
   <script src="host.js"></script>
 </body>
 </html>

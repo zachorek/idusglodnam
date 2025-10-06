@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Koszyk - Chachor Piecze</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 </head>
 <body>
 <nav class="navbar">
@@ -75,6 +76,10 @@
       <div class="cart-form-wrapper">
         <h2 class="cart-form-title">Dane do zamówienia</h2>
         <form id="orderForm" class="cart-form">
+          <div class="cart-field">
+            <span>Wybierz datę odbioru:</span>
+            <input type="text" id="pickupDate" placeholder="Wybierz datę" readonly>
+          </div>
           <label class="cart-field">
             <span>Email</span>
             <input type="email" id="email" placeholder="Twój adres email" required>
@@ -107,6 +112,7 @@
     </aside>
   </main>
 
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
   <script src="cart.js"></script>
 </body>
 </html>

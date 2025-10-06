@@ -1,11 +1,40 @@
 const availabilityGrid = document.getElementById('availabilityGrid');
 const availabilityError = document.getElementById('availabilityError');
+const availabilityDateInput = document.getElementById('availabilityDate');
+const availabilityStock = document.getElementById('availabilityStock');
 
 const DAYS_OF_WEEK = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela'];
 
 document.addEventListener('DOMContentLoaded', () => {
   loadAvailabilitySchedule();
+  initializeFlatpickr();
 });
+
+function initializeFlatpickr() {
+  if (!availabilityDateInput) return;
+
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const maxDate = new Date();
+  maxDate.setMonth(maxDate.getMonth() + 1);
+
+  flatpickr(availabilityDateInput, {
+    minDate: tomorrow,
+    maxDate: maxDate,
+    dateFormat: "Y-m-d",
+    altInput: true,
+    altFormat: "d F Y",
+    locale: "pl",
+    inline: true,
+    onChange: function(selectedDates, dateStr, instance) {
+      const selectedDate = selectedDates[0];
+      if (selectedDate) {
+        handleDatePicked(selectedDate);
+      }
+    }
+  });
+}
 
 async function loadAvailabilitySchedule() {
   if (!availabilityGrid) {
@@ -31,6 +60,96 @@ async function loadAvailabilitySchedule() {
     availabilityGrid.classList.remove('is-loading');
   }
 }
+
+async function handleDatePicked(date) {
+  if (!(date instanceof Date)) return;
+  const dayIndex = (date.getDay() + 6) % 7; // convert JS (Sun=0) to Mon=0..Sun=6
+  const dayName = DAYS_OF_WEEK[dayIndex];
+
+  try {
+    if (availabilityStock) availabilityStock.textContent = 'Ładuję produkty...';
+
+    // Load products available on this specific day
+    const res = await fetch(`/api/products/day/${dayIndex}`);
+    if (!res.ok) throw new Error('Błąd pobierania produktów');
+    const products = await res.json();
+
+    // Update the selected date display
+    const selectedDateElement = document.getElementById('selectedAvailabilityDate');
+    if (selectedDateElement) {
+      selectedDateElement.textContent = `${dayName}, ${date.toLocaleDateString('pl-PL')}`;
+    }
+
+    renderProductsForDay(products, dayName);
+  } catch (err) {
+    console.error('Błąd pobierania produktów:', err);
+    if (availabilityStock) availabilityStock.textContent = 'Nie udało się pobrać produktów dla wybranej daty.';
+  }
+}
+
+function renderProductsForDay(products, dayName) {
+  if (!availabilityStock) {
+    return;
+  }
+
+  if (!Array.isArray(products) || !products.length) {
+    availabilityStock.innerHTML = `
+      <h3>Dostępne produkty na ${dayName}</h3>
+      <p>Brak dostępnych produktów na wybrany dzień.</p>
+    `;
+    return;
+  }
+
+  const title = document.createElement('h3');
+  title.textContent = `Dostępne produkty na ${dayName}`;
+
+  const list = document.createElement('ul');
+  list.className = 'availability-stock-list';
+
+  products.forEach((product) => {
+    const li = document.createElement('li');
+    li.className = 'availability-stock-item';
+    li.innerHTML = `
+      <div class="product-info">
+        <span class="product-name">${product.name}</span>
+        <span class="product-price">${product.price} zł</span>
+      </div>
+      <div class="product-description">${product.description || ''}</div>
+    `;
+    list.appendChild(li);
+  });
+
+  availabilityStock.innerHTML = '';
+  availabilityStock.appendChild(title);
+  availabilityStock.appendChild(list);
+}
+
+function renderStockList(items) {
+  if (!availabilityStock) {
+    return;
+  }
+  if (!Array.isArray(items) || !items.length) {
+    availabilityStock.innerHTML = '<p>Brak danych magazynowych.</p>';
+    return;
+  }
+  const list = document.createElement('ul');
+  list.className = 'availability-stock-list';
+  items.forEach((it) => {
+    const li = document.createElement('li');
+    li.className = 'availability-stock-item';
+    const name = document.createElement('span');
+    name.className = 'availability-stock-name';
+    name.textContent = it && it.name ? it.name : (it.productId || 'Produkt');
+    const qty = document.createElement('span');
+    qty.className = 'availability-stock-qty';
+    qty.textContent = `pozostało: ${Number(it && it.remaining) || 0}`;
+    li.append(name, qty);
+    list.appendChild(li);
+  });
+  availabilityStock.innerHTML = '';
+  availabilityStock.appendChild(list);
+}
+
 
 function renderAvailabilityCards(schedule) {
   if (!availabilityGrid) {

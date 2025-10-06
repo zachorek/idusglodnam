@@ -13,6 +13,7 @@ const discountCodeInputEl = document.getElementById("discountCodeInput");
 const applyDiscountButton = document.getElementById("applyDiscountButton");
 const removeDiscountButton = document.getElementById("removeDiscountButton");
 const discountFeedback = document.getElementById("discountFeedback");
+const pickupDateInput = document.getElementById("pickupDate");
 
 const currencyFormatter = new Intl.NumberFormat('pl-PL', { style: 'currency', currency: 'PLN' });
 
@@ -23,6 +24,7 @@ let lastSummaryTotals = {
   discountAmount: 0,
   totalAfterDiscount: 0
 };
+let selectedPickupDate = null;
 
 function parsePrice(value) {
   if (typeof value === 'number') {
@@ -50,7 +52,7 @@ function triggerPulse(element, className) {
   element.classList.add(className);
 }
 
-function showOrderMessage(type, message) {
+function showOrderMessage(type, message, { html = false } = {}) {
   if (!orderMessage) {
     return;
   }
@@ -59,7 +61,11 @@ function showOrderMessage(type, message) {
   if (type) {
     orderMessage.classList.add(type);
   }
-  orderMessage.textContent = message;
+  if (html) {
+    orderMessage.innerHTML = message;
+  } else {
+    orderMessage.textContent = message;
+  }
 
   requestAnimationFrame(() => {
     orderMessage.classList.add('is-visible');
@@ -373,12 +379,43 @@ if (orderForm) {
     const paymentInput = orderForm.querySelector("input[name='payment']:checked");
     const payment = paymentInput ? paymentInput.value : 'place';
 
+    if (!(selectedPickupDate instanceof Date)) {
+      showOrderMessage('error', 'Wybierz datę odbioru z kalendarza.');
+      return;
+    }
+    const pickupDayIndex = (selectedPickupDate.getDay() + 6) % 7;
+
+    // pre-check remaining stock for selected day
+    try {
+      const res = await fetch(`/api/stock/${pickupDayIndex}`);
+      if (res.ok) {
+        const stock = await res.json();
+        const stockMap = new Map(stock.map((s) => [String(s.productId), Number(s.remaining) || 0]));
+        const insufficient = [];
+        cart.forEach((item) => {
+          const remaining = stockMap.get(String(item.id));
+          if (remaining !== undefined && item.quantity > remaining) {
+            insufficient.push({ name: item.name, left: remaining });
+          }
+        });
+        if (insufficient.length) {
+          const list = insufficient.map((x) => `<li><strong>${x.name}</strong>: dostępne ${x.left} szt.</li>`).join('');
+          const msg = `Za duża ilość w koszyku na wybrany dzień.<ul>${list}</ul><a href="/accessibility">Sprawdź dostępność</a>`;
+          showOrderMessage('error', msg, { html: true });
+          return;
+        }
+      }
+    } catch (_) {
+      // ignore pre-check errors; server will validate
+    }
+
     const order = {
       email,
       phone,
       comment,
       payment,
       products: cart,
+      pickupDayIndex,
       discountCode: activeDiscount ? activeDiscount.code : '',
       discountPercent: activeDiscount ? activeDiscount.percent : 0,
       discountAmount: lastSummaryTotals.discountAmount,
@@ -444,4 +481,28 @@ window.addEventListener("DOMContentLoaded", () => {
   updateCart();
   updateCartCount();
   loadDiscountCodes();
+  initializeFlatpickr();
 });
+
+function initializeFlatpickr() {
+  if (!pickupDateInput) return;
+
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const maxDate = new Date();
+  maxDate.setMonth(maxDate.getMonth() + 1);
+
+  flatpickr(pickupDateInput, {
+    minDate: tomorrow,
+    maxDate: maxDate,
+    dateFormat: "Y-m-d",
+    altInput: true,
+    altFormat: "d F Y",
+    locale: "pl",
+    inline: true,
+    onChange: function(selectedDates, dateStr, instance) {
+      selectedPickupDate = selectedDates[0] || null;
+    }
+  });
+}

@@ -1,40 +1,11 @@
 const availabilityGrid = document.getElementById('availabilityGrid');
 const availabilityError = document.getElementById('availabilityError');
-const availabilityDateInput = document.getElementById('availabilityDate');
-const availabilityStock = document.getElementById('availabilityStock');
 
 const DAYS_OF_WEEK = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela'];
 
-document.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', () => {
   loadAvailabilitySchedule();
-  initializeFlatpickr();
 });
-
-function initializeFlatpickr() {
-  if (!availabilityDateInput) return;
-
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-
-  const maxDate = new Date();
-  maxDate.setMonth(maxDate.getMonth() + 1);
-
-  flatpickr(availabilityDateInput, {
-    minDate: tomorrow,
-    maxDate: maxDate,
-    dateFormat: "Y-m-d",
-    altInput: true,
-    altFormat: "d F Y",
-    locale: "pl",
-    inline: true,
-    onChange: function(selectedDates, dateStr, instance) {
-      const selectedDate = selectedDates[0];
-      if (selectedDate) {
-        handleDatePicked(selectedDate);
-      }
-    }
-  });
-}
 
 async function loadAvailabilitySchedule() {
   if (!availabilityGrid) {
@@ -45,136 +16,22 @@ async function loadAvailabilitySchedule() {
     toggleAvailabilityError(false);
     availabilityGrid.classList.add('is-loading');
 
-    const res = await fetch('/api/availability');
-    if (!res.ok) {
+    const response = await fetch('/api/availability');
+    if (!response.ok) {
       throw new Error('Nie udało się pobrać danych o dostępności');
     }
 
-    const data = await res.json();
-    renderAvailabilityCards(Array.isArray(data) ? data : []);
+    const data = await response.json();
+    const schedule = Array.isArray(data) ? data : [];
+    renderAvailabilityCards(schedule);
   } catch (error) {
-    console.error('Błąd pobierania dostępności:', error);
+    console.error('Błąd pobierania harmonogramu dostępności:', error);
     renderAvailabilityCards([]);
     toggleAvailabilityError(true, 'Nie udało się załadować harmonogramu. Spróbuj ponownie później.');
   } finally {
     availabilityGrid.classList.remove('is-loading');
   }
 }
-
-async function handleDatePicked(date) {
-  if (!(date instanceof Date)) return;
-  const dayIndex = (date.getDay() + 6) % 7; // convert JS (Sun=0) to Mon=0..Sun=6
-  const dayName = DAYS_OF_WEEK[dayIndex];
-
-  try {
-    if (availabilityStock) availabilityStock.textContent = 'Ładuję produkty...';
-
-    // Load products available on this specific day
-    const res = await fetch(`/api/products/day/${dayIndex}`);
-    if (!res.ok) throw new Error('Błąd pobierania produktów');
-    const products = await res.json();
-
-    // Load stock data for this day
-    const stockRes = await fetch(`/api/stock/${dayIndex}`);
-    if (!stockRes.ok) throw new Error('Błąd pobierania stanów');
-    const stockData = await stockRes.json();
-
-    // Update the selected date display
-    const selectedDateElement = document.getElementById('selectedAvailabilityDate');
-    if (selectedDateElement) {
-      selectedDateElement.textContent = `${dayName}, ${date.toLocaleDateString('pl-PL')}`;
-    }
-
-    renderProductsForDay(products, dayName, stockData);
-  } catch (err) {
-    console.error('Błąd pobierania produktów:', err);
-    if (availabilityStock) availabilityStock.textContent = 'Nie udało się pobrać produktów dla wybranej daty.';
-  }
-}
-
-function renderProductsForDay(products, dayName, stockData = []) {
-  if (!availabilityStock) {
-    return;
-  }
-
-  if (!Array.isArray(products) || !products.length) {
-    availabilityStock.innerHTML = `
-      <h3>Dostępne produkty na ${dayName}</h3>
-      <p>Brak dostępnych produktów na wybrany dzień.</p>
-    `;
-    return;
-  }
-
-  const title = document.createElement('h3');
-  title.textContent = `Dostępne produkty na ${dayName}`;
-
-  const list = document.createElement('ul');
-  list.className = 'availability-stock-list';
-
-  // Create a map of stock data for quick lookup
-  const stockMap = new Map();
-  stockData.forEach(item => {
-    stockMap.set(item.productId, item);
-  });
-
-  products.forEach((product) => {
-    const stockInfo = stockMap.get(product._id);
-    const remaining = stockInfo ? stockInfo.remaining : 0;
-
-    const li = document.createElement('li');
-    li.className = 'availability-stock-item';
-
-    // Add sold-out class if no stock remaining
-    if (remaining === 0) {
-      li.classList.add('sold-out');
-    }
-
-    li.innerHTML = `
-      <div class="product-info">
-        <span class="product-name">${product.name}</span>
-      </div>
-      <div class="product-description">${product.description || ''}</div>
-      <div class="product-stock">
-        ${remaining > 0
-          ? `<span class="stock-info">Pozostało: ${remaining} szt.</span>`
-          : `<span class="sold-out-tag">WYPRZEDANE</span>`
-        }
-      </div>
-    `;
-    list.appendChild(li);
-  });
-
-  availabilityStock.innerHTML = '';
-  availabilityStock.appendChild(title);
-  availabilityStock.appendChild(list);
-}
-
-function renderStockList(items) {
-  if (!availabilityStock) {
-    return;
-  }
-  if (!Array.isArray(items) || !items.length) {
-    availabilityStock.innerHTML = '<p>Brak danych magazynowych.</p>';
-    return;
-  }
-  const list = document.createElement('ul');
-  list.className = 'availability-stock-list';
-  items.forEach((it) => {
-    const li = document.createElement('li');
-    li.className = 'availability-stock-item';
-    const name = document.createElement('span');
-    name.className = 'availability-stock-name';
-    name.textContent = it && it.name ? it.name : (it.productId || 'Produkt');
-    const qty = document.createElement('span');
-    qty.className = 'availability-stock-qty';
-    qty.textContent = `pozostało: ${Number(it && it.remaining) || 0}`;
-    li.append(name, qty);
-    list.appendChild(li);
-  });
-  availabilityStock.innerHTML = '';
-  availabilityStock.appendChild(list);
-}
-
 
 function renderAvailabilityCards(schedule) {
   if (!availabilityGrid) {
@@ -183,14 +40,10 @@ function renderAvailabilityCards(schedule) {
 
   availabilityGrid.innerHTML = '';
 
-  const data = schedule.length ? schedule : DAYS_OF_WEEK.map((dayName, dayIndex) => ({
-    dayIndex,
-    dayName,
-    details: '',
-    time: '',
-    entries: [],
-    updatedAt: null
-  }));
+  const hasData = Array.isArray(schedule) && schedule.length;
+  const data = hasData
+    ? schedule
+    : DAYS_OF_WEEK.map((dayName, dayIndex) => ({ dayIndex, dayName, entries: [], details: '', updatedAt: null }));
 
   data.forEach((day, index) => {
     availabilityGrid.appendChild(createAvailabilityCard(day, index));
@@ -202,16 +55,16 @@ function createAvailabilityCard(day, index) {
   card.className = 'availability-card';
   card.style.setProperty('--card-index', index);
 
-  const heading = document.createElement('header');
-  heading.className = 'availability-card__header';
+  const header = document.createElement('header');
+  header.className = 'availability-card__header';
 
   const title = document.createElement('h3');
   title.textContent = day.dayName || DAYS_OF_WEEK[day.dayIndex] || '';
-  heading.appendChild(title);
+  header.appendChild(title);
 
   const timeInfo = document.createElement('p');
   timeInfo.className = 'availability-card__time';
-  heading.appendChild(timeInfo);
+  header.appendChild(timeInfo);
 
   const body = document.createElement('div');
   body.className = 'availability-card__body';
@@ -223,48 +76,28 @@ function createAvailabilityCard(day, index) {
     body.appendChild(details);
   }
 
-  const normalizeTime = (value) => {
-    if (!value) {
-      return '';
-    }
-    const match = value.match(/^(\d{1,2})(?::(\d{2}))?$/);
-    if (!match) {
-      return '';
-    }
-    const hour = match[1].padStart(2, '0');
-    const minute = match[2] ?? '00';
-    return `${hour}:${minute}`;
-  };
-
   const entries = Array.isArray(day.entries)
-    ? day.entries
-        .filter((entry) => entry && (entry.product || entry.availableFrom))
-        .map((entry) => {
-          const product = entry.product || '';
-          const availableFromRaw = entry.availableFrom || '';
-          const normalizedTime = normalizeTime(availableFromRaw);
-          return {
-            product,
-            availableFrom: normalizedTime || availableFromRaw,
-            sortKey: normalizedTime || availableFromRaw
-          };
-        })
+    ? day.entries.filter((entry) => entry && (entry.product || entry.availableFrom))
     : [];
 
-  const sortedEntries = entries.slice().sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+  if (entries.length) {
+    const list = document.createElement('ul');
+    list.className = 'availability-card__list';
 
-  if (sortedEntries.length) {
-    const firstWithTime = sortedEntries.find((entry) => entry.availableFrom);
+    const sorted = entries.slice().sort((a, b) => {
+      const aKey = normalizeTimeKey(a.availableFrom);
+      const bKey = normalizeTimeKey(b.availableFrom);
+      return aKey.localeCompare(bKey);
+    });
+
+    const firstWithTime = sorted.find((entry) => entry.availableFrom);
     if (firstWithTime && firstWithTime.availableFrom) {
-      timeInfo.textContent = `Najwcześniej dostępne od ${firstWithTime.availableFrom}`;
+      timeInfo.textContent = `Najwcześniej od ${normalizeTimeLabel(firstWithTime.availableFrom)}`;
     } else {
       timeInfo.textContent = 'Wypieki dostępne w ciągu dnia.';
     }
 
-    const list = document.createElement('ul');
-    list.className = 'availability-card__list';
-
-    sortedEntries.forEach((entry) => {
+    sorted.forEach((entry) => {
       const item = document.createElement('li');
       item.className = 'availability-card__list-item';
 
@@ -276,8 +109,8 @@ function createAvailabilityCard(day, index) {
       const time = document.createElement('span');
       time.className = 'availability-card__list-time';
       time.textContent = entry.availableFrom
-        ? `od ${entry.availableFrom}`
-        : 'godzina zostanie podana';
+        ? `od ${normalizeTimeLabel(entry.availableFrom)}`
+        : 'godzina do potwierdzenia';
       item.appendChild(time);
 
       list.appendChild(item);
@@ -289,15 +122,36 @@ function createAvailabilityCard(day, index) {
 
     const empty = document.createElement('p');
     empty.className = 'availability-card__empty';
-    empty.textContent = 'Szczegółowe godziny produktów pojawią się wkrótce.';
+    empty.textContent = 'Oferta na ten dzień pojawi się wkrótce.';
     body.appendChild(empty);
   }
 
-  card.append(heading, body);
+  card.append(header, body);
   return card;
 }
 
-function toggleAvailabilityError(visible, message = '') {
+function normalizeTimeKey(value) {
+  if (!value) {
+    return '99:99';
+  }
+  const match = String(value).match(/^(\d{1,2})(?::(\d{2}))?$/);
+  if (!match) {
+    return String(value);
+  }
+  const hour = match[1].padStart(2, '0');
+  const minute = match[2] ? match[2].slice(0, 2) : '00';
+  return `${hour}:${minute}`;
+}
+
+function normalizeTimeLabel(value) {
+  const key = normalizeTimeKey(value);
+  if (key === String(value)) {
+    return key;
+  }
+  return key;
+}
+
+function toggleAvailabilityError(visible, message) {
   if (!availabilityError) {
     return;
   }

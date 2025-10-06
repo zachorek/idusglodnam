@@ -23,28 +23,15 @@ const aboutPreviewText = document.getElementById("aboutPreviewText");
 const aboutPreviewImage = document.getElementById("aboutPreviewImage");
 const aboutNoImagePlaceholder = document.getElementById("aboutNoImagePlaceholder");
 
-// Stock management elements
-const daySelect = document.getElementById('daySelect');
-const productsStock = document.getElementById('productsStock');
-const saveWeeklyStock = document.getElementById('saveWeeklyStock');
-const dateSelect = document.getElementById('dateSelect');
-const dateProductsStock = document.getElementById('dateProductsStock');
-const saveDateStock = document.getElementById('saveDateStock');
-const stockOverview = document.getElementById('stockOverview');
-
 const DAYS_OF_WEEK = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela'];
 const PRODUCT_DAY_ABBREVIATIONS = ['PN', 'WT', 'ŚR', 'CZ', 'PT', 'SO', 'ND'];
 const MAX_AVAILABILITY_TILES = 6;
 const DEFAULT_ABOUT_TEXT = 'Chachor Piecze to niewielki zespół piekarzy i cukierników, którzy robią codzienne wypieki w rytmie miasta.';
-let availabilityMessageTimer = null;
-
-// Stock management variables
-let products = [];
-let currentDayIndex = 0;
-let currentDate = null;
 
 let categoriesCache = [];
 let discountCodesCache = [];
+let productGridListenerAttached = false;
+let availabilityMessageTimer = null;
 
 if (categoryList) {
   fetchCategories();
@@ -83,6 +70,17 @@ if (aboutImageInput) {
 
 if (aboutForm) {
   aboutForm.addEventListener('submit', handleAboutFormSubmit);
+}
+
+function truncateText(text, maxLength) {
+  if (!text) {
+    return '';
+  }
+  const trimmed = text.trim();
+  if (trimmed.length <= maxLength) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
 }
 
 fetchAboutContent();
@@ -190,7 +188,6 @@ if (hostForm) {
     }
   });
 }
-
 
 function getProductAvailabilityCheckboxes() {
   if (!productAvailabilityDays) {
@@ -333,6 +330,43 @@ function renderProductAvailabilityTiles(days) {
   return `<div class="product-availability-grid" aria-label="Dni dostępności">${itemsMarkup}</div>`;
 }
 
+function normalizeEntryTime(value) {
+  if (!value) {
+    return null;
+  }
+
+  const raw = String(value).trim();
+  if (!raw) {
+    return null;
+  }
+
+  if (/^\d{1,2}:\d{2}$/.test(raw)) {
+    const [hourRaw, minuteRaw] = raw.split(':');
+    return `${hourRaw.padStart(2, '0')}:${minuteRaw}`;
+  }
+
+  const separatorMatch = raw.match(/^(\d{1,2})[\.\-,\s](\d{1,2})$/);
+  if (separatorMatch) {
+    const hour = separatorMatch[1].padStart(2, '0');
+    const minute = separatorMatch[2].padEnd(2, '0').slice(0, 2);
+    return `${hour}:${minute}`;
+  }
+
+  if (/^\d{3,4}$/.test(raw)) {
+    const digits = raw.padStart(4, '0');
+    const hour = digits.slice(0, digits.length - 2);
+    const minute = digits.slice(-2);
+    return `${hour.padStart(2, '0')}:${minute}`;
+  }
+
+  if (/^\d{1,2}$/.test(raw)) {
+    return `${raw.padStart(2, '0')}:00`;
+  }
+
+  return null;
+}
+
+
 
 async function fetchAvailabilitySchedule() {
   try {
@@ -346,7 +380,7 @@ async function fetchAvailabilitySchedule() {
   } catch (err) {
     console.error('Błąd pobierania dostępności:', err);
     renderAvailabilityManager([]);
-    showAvailabilityNotice('error', "Nie udało się pobrać danych o dostępności.");
+    showAvailabilityNotice('error', 'Nie udało się pobrać harmonogramu. Spróbuj ponownie.');
   }
 }
 
@@ -357,12 +391,9 @@ function renderAvailabilityManager(schedule) {
 
   availabilityManager.innerHTML = '';
 
-  const data = schedule.length ? schedule : DAYS_OF_WEEK.map((dayName, dayIndex) => ({
-    dayIndex,
-    dayName,
-    entries: [],
-    updatedAt: null
-  }));
+  const data = Array.isArray(schedule) && schedule.length
+    ? schedule
+    : DAYS_OF_WEEK.map((dayName, dayIndex) => ({ dayIndex, dayName, entries: [], updatedAt: null }));
 
   data.forEach((day) => {
     availabilityManager.appendChild(createAvailabilityCard(day));
@@ -380,6 +411,13 @@ function createAvailabilityCard(day) {
   const title = document.createElement('h3');
   title.textContent = day.dayName || DAYS_OF_WEEK[day.dayIndex] || '';
   header.appendChild(title);
+
+  const updated = document.createElement('span');
+  updated.className = 'availability-card-updated';
+  if (day.updatedAt) {
+    updated.textContent = `Ostatnia aktualizacja: ${new Date(day.updatedAt).toLocaleString('pl-PL')}`;
+  }
+  header.appendChild(updated);
 
   const entriesSection = document.createElement('div');
   entriesSection.className = 'availability-entries-section';
@@ -400,9 +438,9 @@ function createAvailabilityCard(day) {
 
   const entriesList = document.createElement('div');
   entriesList.className = 'availability-entries';
-  entriesSection.append(entriesHeader, entriesList);
-
   populateAvailabilityEntries(entriesList, Array.isArray(day.entries) ? day.entries : []);
+
+  entriesSection.append(entriesHeader, entriesList);
 
   const actions = document.createElement('div');
   actions.className = 'availability-actions';
@@ -417,7 +455,110 @@ function createAvailabilityCard(day) {
   return card;
 }
 
-async function handleAvailabilityClick(event) {
+function appendAvailabilityEntryRow(container, entry = {}) {
+  if (!container) {
+    return;
+  }
+
+  const row = document.createElement('div');
+  row.className = 'availability-entry';
+
+  const productInput = document.createElement('input');
+  productInput.className = 'availability-entry-input';
+  productInput.dataset.role = 'entry-product';
+  productInput.type = 'text';
+  productInput.placeholder = 'Nazwa produktu (np. Bagietki)';
+  productInput.value = entry && typeof entry.product === 'string' ? entry.product : '';
+
+  const startInput = document.createElement('input');
+  startInput.className = 'availability-entry-input availability-entry-time';
+  startInput.dataset.role = 'entry-start';
+  startInput.type = 'text';
+  startInput.placeholder = 'Dostępne od (np. 10:30)';
+  startInput.inputMode = 'numeric';
+  startInput.autocomplete = 'off';
+  startInput.pattern = '\\d{1,2}:\\d{2}';
+  startInput.value = entry && typeof entry.availableFrom === 'string' ? entry.availableFrom : '';
+
+  const removeButton = document.createElement('button');
+  removeButton.type = 'button';
+  removeButton.className = 'availability-entry-remove';
+  removeButton.setAttribute('aria-label', 'Usuń pozycję');
+  removeButton.textContent = 'Usuń';
+
+  row.append(productInput, startInput, removeButton);
+  container.appendChild(row);
+  syncEntryRemoveButtons(container);
+}
+
+function populateAvailabilityEntries(container, entries) {
+  if (!container) {
+    return;
+  }
+
+  container.innerHTML = '';
+
+  const data = Array.isArray(entries) && entries.length ? entries : [{}];
+  data.forEach((entry) => appendAvailabilityEntryRow(container, entry));
+}
+
+function syncEntryRemoveButtons(container) {
+  if (!container) {
+    return;
+  }
+
+  const rows = Array.from(container.querySelectorAll('.availability-entry'));
+  rows.forEach((row) => {
+    const button = row.querySelector('.availability-entry-remove');
+    if (!button) {
+      return;
+    }
+    button.disabled = false;
+    button.classList.remove('is-disabled');
+  });
+}
+
+function updateAvailabilityCard(card, updated) {
+  const entriesContainer = card.querySelector('.availability-entries');
+  if (entriesContainer) {
+    populateAvailabilityEntries(entriesContainer, updated && Array.isArray(updated.entries) ? updated.entries : []);
+  }
+
+  const updatedLabel = card.querySelector('.availability-card-updated');
+  if (updatedLabel) {
+    updatedLabel.textContent = updated && updated.updatedAt
+      ? `Ostatnia aktualizacja: ${new Date(updated.updatedAt).toLocaleString('pl-PL')}`
+      : '';
+  }
+}
+
+function showAvailabilityNotice(type, message) {
+  if (!availabilityMessage) {
+    return;
+  }
+
+  if (availabilityMessageTimer) {
+    clearTimeout(availabilityMessageTimer);
+    availabilityMessageTimer = null;
+  }
+
+  availabilityMessage.textContent = message;
+  availabilityMessage.classList.remove('success', 'error', 'visible');
+
+  if (type) {
+    availabilityMessage.classList.add(type);
+  }
+
+  requestAnimationFrame(() => {
+    availabilityMessage.classList.add('visible');
+  });
+
+  availabilityMessageTimer = setTimeout(() => {
+    availabilityMessage.classList.remove('visible');
+  }, 4000);
+}
+
+function handleAvailabilityClick(event) {
   const target = event.target;
   if (target.classList.contains('availability-entry-add')) {
     const card = target.closest('.availability-manager-card');
@@ -458,9 +599,7 @@ async function handleAvailabilityClick(event) {
   }
 
   const entriesContainer = card.querySelector('.availability-entries');
-
   const rows = entriesContainer ? Array.from(entriesContainer.querySelectorAll('.availability-entry')) : [];
-  const timePattern = /^\d{1,2}:\d{2}$/;
   const entries = [];
   let focusTarget = null;
   let errorMessage = '';
@@ -469,13 +608,13 @@ async function handleAvailabilityClick(event) {
     const productInput = row.querySelector('input[data-role="entry-product"]');
     const startInput = row.querySelector('input[data-role="entry-start"]');
     const product = productInput ? productInput.value.trim() : '';
-    const availableFrom = startInput ? startInput.value.trim() : '';
+    const availableFromRaw = startInput ? startInput.value.trim() : '';
 
-    if (!product && !availableFrom) {
+    if (!product && !availableFromRaw) {
       return;
     }
 
-    if (!product || !availableFrom) {
+    if (!product || !availableFromRaw) {
       if (!focusTarget) {
         focusTarget = !product ? productInput : startInput;
         errorMessage = 'Uzupełnij nazwę wypieku i godzinę dostępności.';
@@ -483,15 +622,20 @@ async function handleAvailabilityClick(event) {
       return;
     }
 
-    if (!timePattern.test(availableFrom)) {
+    const normalizedTime = normalizeEntryTime(availableFromRaw);
+    if (!normalizedTime) {
       if (!focusTarget) {
         focusTarget = startInput;
-        errorMessage = 'Użyj formatu godziny HH:MM (np. 10:30).';
+        errorMessage = 'Podaj godzinę w formacie HH:MM (np. 10:30).';
       }
       return;
     }
 
-    entries.push({ product, availableFrom });
+    if (startInput) {
+      startInput.value = normalizedTime;
+    }
+
+    entries.push({ product, availableFrom: normalizedTime });
   });
 
   if (!entries.length || focusTarget) {
@@ -506,8 +650,10 @@ async function handleAvailabilityClick(event) {
     return;
   }
 
-  const payload = { entries };
+  persistAvailability(dayIndex, entries, button, card);
+}
 
+async function persistAvailability(dayIndex, entries, button, card) {
   const originalText = button.textContent;
   button.disabled = true;
   button.textContent = 'Zapisuję...';
@@ -516,7 +662,7 @@ async function handleAvailabilityClick(event) {
     const res = await fetch(`/api/availability/${dayIndex}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({ entries })
     });
 
     if (!res.ok) {
@@ -525,7 +671,8 @@ async function handleAvailabilityClick(event) {
 
     const updated = await res.json();
     updateAvailabilityCard(card, updated);
-    showAvailabilityNotice('success', `Zapisano dostępność na ${updated.dayName}.`);
+    showAvailabilityNotice('success', `Zapisano dostępność na ${updated.dayName || DAYS_OF_WEEK[dayIndex] || 'wybrany dzień'}.`);
+    await fetchAvailabilitySchedule();
   } catch (err) {
     console.error('Błąd zapisu dostępności:', err);
     showAvailabilityNotice('error', 'Nie udało się zapisać zmian. Spróbuj ponownie.');
@@ -535,264 +682,131 @@ async function handleAvailabilityClick(event) {
   }
 }
 
-function updateAvailabilityCard(card, updated) {
-  const entriesContainer = card.querySelector('.availability-entries');
-  if (entriesContainer) {
-    populateAvailabilityEntries(entriesContainer, updated && Array.isArray(updated.entries) ? updated.entries : []);
-  }
-}
-
-function appendAvailabilityEntryRow(container, entry = {}) {
-  if (!container) {
+async function fetchProducts(forceRefresh = false) {
+  if (!productGrid) {
     return;
   }
 
-  const row = document.createElement('div');
-  row.className = 'availability-entry';
-
-  const productInput = document.createElement('input');
-  productInput.className = 'availability-entry-input';
-  productInput.dataset.role = 'entry-product';
-  productInput.type = 'text';
-  productInput.placeholder = 'Nazwa produktu (np. Bagietki)';
-  productInput.value = entry && typeof entry.product === 'string' ? entry.product : '';
-
-  const startInput = document.createElement('input');
-  startInput.className = 'availability-entry-input availability-entry-time';
-  startInput.dataset.role = 'entry-start';
-  startInput.type = 'text';
-  startInput.placeholder = 'Dostępne od (np. 10:30)';
-  startInput.inputMode = 'numeric';
-  startInput.autocomplete = 'off';
-  startInput.pattern = '\d{1,2}:\d{2}';
-  startInput.value = entry && typeof entry.availableFrom === 'string' ? entry.availableFrom : '';
-
-  const removeButton = document.createElement('button');
-  removeButton.type = 'button';
-  removeButton.className = 'availability-entry-remove';
-  removeButton.setAttribute('aria-label', 'Usuń pozycję');
-  removeButton.textContent = '×';
-
-  row.append(productInput, startInput, removeButton);
-  container.appendChild(row);
-
-  syncEntryRemoveButtons(container);
-}
-
-function populateAvailabilityEntries(container, entries) {
-  if (!container) {
-    return;
-  }
-
-  container.innerHTML = '';
-
-  const data = Array.isArray(entries) && entries.length ? entries : [{}];
-  data.forEach((entry) => appendAvailabilityEntryRow(container, entry));
-}
-
-function syncEntryRemoveButtons(container) {
-  if (!container) {
-    return;
-  }
-
-  const rows = Array.from(container.querySelectorAll('.availability-entry'));
-  rows.forEach((row) => {
-    const button = row.querySelector('.availability-entry-remove');
-    if (button) {
-      const disabled = rows.length <= 1;
-      button.disabled = disabled;
-      button.classList.toggle('is-disabled', disabled);
-    }
-  });
-}
-
-function showAvailabilityNotice(type, message) {
-  if (!availabilityMessage) {
-    return;
-  }
-
-  if (availabilityMessageTimer) {
-    clearTimeout(availabilityMessageTimer);
-    availabilityMessageTimer = null;
-  }
-
-  availabilityMessage.textContent = message;
-  availabilityMessage.classList.remove('success', 'error', 'visible');
-
-  if (type) {
-    availabilityMessage.classList.add(type);
-  }
-
-  requestAnimationFrame(() => {
-    availabilityMessage.classList.add('visible');
-  });
-
-  availabilityMessageTimer = setTimeout(() => {
-    availabilityMessage.classList.remove('visible');
-  }, 4000);
-}
-
-
-async function fetchDiscountCodes() {
   try {
-    const res = await fetch('/api/discount-codes');
+    const res = await fetch('/api/products');
     if (!res.ok) {
-      throw new Error('Błąd odpowiedzi serwera');
+      throw new Error('Błąd pobierania produktów');
     }
 
-    discountCodesCache = await res.json();
-    showDiscountMessage('', '');
-    renderDiscountCodes();
+    const products = await res.json();
+    renderProducts(products);
   } catch (err) {
-    console.error('Błąd pobierania kodów rabatowych:', err);
-    showDiscountMessage('error', 'Nie udało się pobrać kodów rabatowych.');
-    if (discountList) {
-      discountList.innerHTML = '';
-    }
+    console.error('Błąd pobierania produktów:', err);
+    productGrid.innerHTML = '<p class="error-message">Nie udało się załadować produktów.</p>';
   }
 }
 
-function renderDiscountCodes() {
-  if (!discountList) {
+function renderProducts(products) {
+  if (!productGrid) {
     return;
   }
 
-  discountList.innerHTML = '';
+  productGrid.innerHTML = '';
 
-  if (!discountCodesCache.length) {
-    discountList.innerHTML = '<p>Brak zapisanych kodów rabatowych.</p>';
+  if (!Array.isArray(products) || !products.length) {
+    productGrid.innerHTML = '<p class="empty-state">Brak produktów do wyświetlenia.</p>';
     return;
   }
 
-  discountCodesCache.forEach((code) => {
-    const item = document.createElement('div');
-    item.className = 'discount-item';
-    item.dataset.id = code._id;
+  const fragment = document.createDocumentFragment();
+
+  products.forEach((product) => {
+    const card = document.createElement('div');
+    card.className = 'product-card host-product-card';
+
+    const imageSrc = product.imageUrl || product.imageData || '';
+    if (imageSrc) {
+      card.classList.add('product-card--with-image');
+      const img = document.createElement('img');
+      img.src = imageSrc;
+      img.alt = product.name || '';
+      img.className = 'product-thumb';
+      card.appendChild(img);
+    } else {
+      card.classList.add('product-card--no-image');
+    }
 
     const info = document.createElement('div');
-    const codeLabel = document.createElement('strong');
-    codeLabel.textContent = code.code;
-    const percentLabel = document.createElement('span');
-    percentLabel.textContent = `${Number(code.percent).toFixed(0)}%`;
-    info.append(codeLabel, percentLabel);
+    info.className = 'product-info';
+
+    const title = document.createElement('h3');
+    title.textContent = product.name || 'Produkt';
+    info.appendChild(title);
+
+    const desc = document.createElement('p');
+    desc.className = 'product-desc';
+    const fullDesc = (product.desc || '').trim();
+    const truncatedDesc = truncateText(fullDesc, 160);
+    desc.textContent = truncatedDesc;
+    if (fullDesc && fullDesc !== truncatedDesc) {
+      desc.title = fullDesc;
+    }
+    info.appendChild(desc);
+
+    const price = document.createElement('p');
+    price.className = 'product-price';
+    price.innerHTML = `<strong>${product.price} zł</strong>`;
+    info.appendChild(price);
+
+    const actions = document.createElement('div');
+    actions.className = 'host-product-actions';
 
     const deleteButton = document.createElement('button');
     deleteButton.type = 'button';
-    deleteButton.textContent = 'Usuń';
-    deleteButton.dataset.id = code._id;
+    deleteButton.dataset.id = product._id;
+    deleteButton.className = 'delete-btn delete-product-btn';
+    deleteButton.textContent = 'Usuń produkt';
+    actions.appendChild(deleteButton);
 
-    item.append(info, deleteButton);
-    discountList.appendChild(item);
+    info.appendChild(actions);
+    card.appendChild(info);
+
+    const availabilityMarkup = renderProductAvailabilityTiles(product.availabilityDays);
+    card.insertAdjacentHTML('beforeend', availabilityMarkup);
+
+    fragment.appendChild(card);
   });
-}
 
-async function handleDiscountFormSubmit(event) {
-  event.preventDefault();
+  productGrid.appendChild(fragment);
 
-  if (!discountForm) {
-    return;
-  }
-
-  const codeValue = normalizeDiscountCode(discountCodeInput ? discountCodeInput.value : '');
-  const percentValue = Math.round(Number(discountPercentInput ? discountPercentInput.value : 0));
-
-  if (!codeValue) {
-    showDiscountMessage('error', 'Wpisz kod rabatowy.');
-    if (discountCodeInput) {
-      discountCodeInput.focus();
-    }
-    return;
-  }
-
-  if (discountCodeInput) {
-    discountCodeInput.value = codeValue;
-  }
-
-  if (!Number.isFinite(percentValue) || percentValue <= 0 || percentValue > 100) {
-    showDiscountMessage('error', 'Podaj procent rabatu z zakresu 1-100.');
-    if (discountPercentInput) {
-      discountPercentInput.focus();
-    }
-    return;
-  }
-
-  const submitButton = discountForm.querySelector('button[type="submit"]');
-  if (submitButton) {
-    submitButton.disabled = true;
-  }
-
-  try {
-    const res = await fetch('/api/discount-codes', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: codeValue, percent: percentValue })
-    });
-
-    if (!res.ok) {
-      const error = await res.json().catch(() => ({ }));
-      throw new Error(error && error.error ? error.error : 'Błąd dodawania kodu');
-    }
-
-    showDiscountMessage('success', `Dodano kod ${codeValue}.`);
-    discountForm.reset();
-    await fetchDiscountCodes();
-  } catch (err) {
-    console.error('Błąd zapisu kodu rabatowego:', err);
-    showDiscountMessage('error', err && err.message ? err.message : 'Błąd zapisu kodu rabatowego.');
-  } finally {
-    if (submitButton) {
-      submitButton.disabled = false;
-    }
+  if (!productGridListenerAttached) {
+    productGrid.addEventListener('click', handleProductGridClick);
+    productGridListenerAttached = true;
   }
 }
 
-async function handleDiscountListClick(event) {
-  const button = event.target.closest('button');
-  if (!button || !button.dataset.id) {
+async function handleProductGridClick(event) {
+  const button = event.target.closest('.delete-product-btn');
+  if (!button) {
     return;
   }
 
   const id = button.dataset.id;
+  if (!id) {
+    return;
+  }
 
-  if (!confirm('Na pewno chcesz usunąć ten kod rabatowy?')) {
+  if (!confirm('Na pewno chcesz usunąć ten produkt?')) {
     return;
   }
 
   try {
-    const res = await fetch(`/api/discount-codes/${id}`, { method: 'DELETE' });
+    const res = await fetch(`/api/products/${id}`, { method: 'DELETE' });
     if (!res.ok) {
-      throw new Error('Błąd usuwania kodu');
+      throw new Error('Błąd usuwania produktu');
     }
 
-    showDiscountMessage('success', 'Kod rabatowy został usunięty.');
-    discountCodesCache = discountCodesCache.filter((code) => code._id !== id);
-    renderDiscountCodes();
+    fetchProducts(true);
   } catch (err) {
-    console.error('Błąd usuwania kodu rabatowego:', err);
-    showDiscountMessage('error', 'Nie udało się usunąć kodu rabatowego.');
+    console.error('Błąd usuwania produktu:', err);
+    alert('Nie udało się usunąć produktu. Spróbuj ponownie.');
   }
 }
-
-function showDiscountMessage(type, message) {
-  if (!discountMessage) {
-    return;
-  }
-
-  discountMessage.textContent = message;
-  discountMessage.classList.remove('success', 'error');
-  if (type) {
-    discountMessage.classList.add(type);
-  }
-}
-
-function normalizeDiscountCode(value) {
-  return (value || '')
-    .trim()
-    .replace(/\s+/g, '')
-    .toUpperCase();
-}
-
-
 
 async function fetchCategories() {
   try {
@@ -925,113 +939,197 @@ async function handleCategoryListClick(event) {
   }
 }
 
-async function reorderCategories(currentIndex, newIndex) {
+function reorderCategories(fromIndex, toIndex) {
   const updated = categoriesCache.slice();
-  const [moved] = updated.splice(currentIndex, 1);
-  updated.splice(newIndex, 0, moved);
+  const [moved] = updated.splice(fromIndex, 1);
+  updated.splice(toIndex, 0, moved);
+  categoriesCache = updated.map((category, index) => ({ ...category, order: index }));
+  renderCategoryList();
+  persistCategoryOrder();
+}
 
+async function persistCategoryOrder() {
   try {
     const res = await fetch('/api/categories/reorder', {
-      method: 'PUT',
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ order: updated.map((category) => category._id) })
+      body: JSON.stringify(categoriesCache.map((category, index) => ({ id: category._id, order: index })))
     });
 
     if (!res.ok) {
-      throw new Error('Błąd odpowiedzi serwera');
+      throw new Error('Błąd zapisu kolejności');
     }
-
-    categoriesCache = await res.json();
-    renderCategoryList();
-    populateCategorySelect();
   } catch (err) {
-    console.error('Błąd zmiany kolejności kategorii:', err);
+    console.error('Błąd zapisu kolejności kategorii:', err);
     if (categoryMessage) {
-      categoryMessage.innerHTML = '<p style="color:red">Nie udało się zmienić kolejności kategorii</p>';
+      categoryMessage.innerHTML = '<p style="color:red">Nie udało się zapisać kolejności kategorii</p>';
     }
   }
 }
 
-async function fetchProducts() {
+async function fetchDiscountCodes() {
   try {
-    const res = await fetch('/api/products');
+    const res = await fetch('/api/discount-codes');
     if (!res.ok) {
-      throw new Error('Błąd odpowiedzi serwera');
+      throw new Error('Błąd pobierania kodów rabatowych');
     }
 
-    const products = await res.json();
-
-    if (!productGrid) {
-      return;
-    }
-
-    productGrid.innerHTML = '';
-    products.forEach((product) => {
-      const imageSrc = product.imageData || product.imageUrl;
-      const card = document.createElement('div');
-      card.classList.add('product-card');
-      if (imageSrc) {
-        card.classList.add('product-card--with-image');
-      } else {
-        card.classList.add('product-card--no-image');
-      }
-      const availabilityMarkup = renderProductAvailabilityTiles(product.availabilityDays);
-      card.innerHTML = `
-        ${imageSrc ? `<img src="${imageSrc}" alt="${product.name}" class="product-thumb">` : ''}
-        <div class="product-info">
-          <h3>${product.name}</h3>
-          <p>${product.desc || ''}</p>
-          <p><strong>${product.price} zł</strong></p>
-          <p>Kategoria: <em>${product.category}</em></p>
-          <button class="delete-btn" data-id="${product._id}">Usuń</button>
-        </div>
-        ${availabilityMarkup}
-      `;
-      productGrid.appendChild(card);
-    });
+    discountCodesCache = await res.json();
+    renderDiscountCodes();
   } catch (err) {
-    console.error('Błąd pobierania produktów:', err);
+    console.error('Błąd pobierania kodów rabatowych:', err);
+    showDiscountMessage('error', 'Nie udało się pobrać kodów rabatowych.');
   }
 }
 
-// Obsługa usuwania produktu
-document.addEventListener('click', async (event) => {
-  const target = event.target;
-  if (!target.classList.contains('delete-btn')) {
+function renderDiscountCodes() {
+  if (!discountList) {
     return;
   }
 
-  const id = target.getAttribute('data-id');
-  if (!id) {
+  discountList.innerHTML = '';
+
+  if (!discountCodesCache.length) {
+    discountList.innerHTML = '<p>Brak kodów rabatowych</p>';
     return;
   }
 
-  if (!confirm('Na pewno chcesz usunąć ten produkt?')) {
+  discountCodesCache.forEach((code) => {
+    const item = document.createElement('div');
+    item.className = 'discount-item';
+
+    const info = document.createElement('div');
+    info.className = 'discount-item-info';
+
+    const codeLabel = document.createElement('strong');
+    codeLabel.textContent = code.code;
+    const percentLabel = document.createElement('span');
+    percentLabel.textContent = `${Number(code.percent).toFixed(0)}%`;
+    info.append(codeLabel, percentLabel);
+
+    const deleteButton = document.createElement('button');
+    deleteButton.type = 'button';
+    deleteButton.textContent = 'Usuń';
+    deleteButton.dataset.id = code._id;
+
+    item.append(info, deleteButton);
+    discountList.appendChild(item);
+  });
+}
+
+async function handleDiscountFormSubmit(event) {
+  event.preventDefault();
+
+  if (!discountForm) {
+    return;
+  }
+
+  const codeValue = normalizeDiscountCode(discountCodeInput ? discountCodeInput.value : '');
+  const percentValue = Math.round(Number(discountPercentInput ? discountPercentInput.value : 0));
+
+  if (!codeValue) {
+    showDiscountMessage('error', 'Wpisz kod rabatowy.');
+    if (discountCodeInput) {
+      discountCodeInput.focus();
+    }
+    return;
+  }
+
+  if (discountCodeInput) {
+    discountCodeInput.value = codeValue;
+  }
+
+  if (!Number.isFinite(percentValue) || percentValue <= 0 || percentValue > 100) {
+    showDiscountMessage('error', 'Podaj procent rabatu z zakresu 1-100.');
+    if (discountPercentInput) {
+      discountPercentInput.focus();
+    }
+    return;
+  }
+
+  const submitButton = discountForm.querySelector('button[type="submit"]');
+  if (submitButton) {
+    submitButton.disabled = true;
+  }
+
+  try {
+    const res = await fetch('/api/discount-codes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: codeValue, percent: percentValue })
+    });
+
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ }));
+      throw new Error(error && error.error ? error.error : 'Błąd dodawania kodu');
+    }
+
+    showDiscountMessage('success', `Dodano kod ${codeValue}.`);
+    discountForm.reset();
+    await fetchDiscountCodes();
+  } catch (err) {
+    console.error('Błąd zapisu kodu rabatowego:', err);
+    showDiscountMessage('error', err && err.message ? err.message : 'Błąd zapisu kodu rabatowego.');
+  } finally {
+    if (submitButton) {
+      submitButton.disabled = false;
+    }
+  }
+}
+
+async function handleDiscountListClick(event) {
+  const button = event.target.closest('button');
+  if (!button || !button.dataset.id) {
+    return;
+  }
+
+  const id = button.dataset.id;
+
+  if (!confirm('Na pewno chcesz usunąć ten kod rabatowy?')) {
     return;
   }
 
   try {
-    const res = await fetch(`/api/products/${id}`, {
-      method: 'DELETE'
-    });
-
+    const res = await fetch(`/api/discount-codes/${id}`, { method: 'DELETE' });
     if (!res.ok) {
-      throw new Error('Błąd odpowiedzi serwera');
+      throw new Error('Błąd usuwania kodu');
     }
 
-    fetchProducts();
+    showDiscountMessage('success', 'Kod rabatowy został usunięty.');
+    discountCodesCache = discountCodesCache.filter((code) => code._id !== id);
+    renderDiscountCodes();
   } catch (err) {
-    alert('❌ Błąd podczas usuwania produktu');
-    console.error(err);
+    console.error('Błąd usuwania kodu rabatowego:', err);
+    showDiscountMessage('error', 'Nie udało się usunąć kodu rabatowego.');
   }
-});
+}
+
+function showDiscountMessage(type, message) {
+  if (!discountMessage) {
+    return;
+  }
+
+  discountMessage.textContent = message;
+  discountMessage.classList.remove('success', 'error');
+  if (type) {
+    discountMessage.classList.add(type);
+  }
+}
+
+function normalizeDiscountCode(value) {
+  return (value || '')
+    .trim()
+    .replace(/\s+/g, '')
+    .toUpperCase();
+}
 
 async function fetchAboutContent() {
   try {
     const res = await fetch('/api/about');
     if (!res.ok) {
-      throw new Error('Błąd odpowiedzi serwera');
+      throw new Error('Błąd pobierania treści O nas');
     }
+
     const data = await res.json();
     applyAboutPreview(data);
   } catch (err) {
@@ -1041,31 +1139,24 @@ async function fetchAboutContent() {
 }
 
 function applyAboutPreview(data) {
-  const text = data && typeof data.heroText === 'string' && data.heroText.trim()
-    ? data.heroText.trim()
-    : DEFAULT_ABOUT_TEXT;
-
+  const text = data && data.aboutText ? data.aboutText : DEFAULT_ABOUT_TEXT;
   if (aboutPreviewText) {
     aboutPreviewText.textContent = text;
   }
 
-  if (aboutTextInput) {
-    aboutTextInput.value = text;
+  if (!aboutPreviewImage || !aboutNoImagePlaceholder) {
+    return;
   }
 
-  const imageData = data && typeof data.heroImageData === 'string' ? data.heroImageData : '';
-  if (aboutPreviewImage) {
-    if (imageData) {
-      aboutPreviewImage.src = imageData;
-      aboutPreviewImage.hidden = false;
-    } else {
-      aboutPreviewImage.removeAttribute('src');
-      aboutPreviewImage.hidden = true;
-    }
-  }
-
-  if (aboutNoImagePlaceholder) {
-    aboutNoImagePlaceholder.hidden = Boolean(imageData);
+  const hasImage = data && data.aboutImageData;
+  if (hasImage) {
+    aboutPreviewImage.src = data.aboutImageData;
+    aboutPreviewImage.hidden = false;
+    aboutNoImagePlaceholder.hidden = true;
+  } else {
+    aboutPreviewImage.removeAttribute('src');
+    aboutPreviewImage.hidden = true;
+    aboutNoImagePlaceholder.hidden = false;
   }
 }
 
@@ -1148,328 +1239,3 @@ function handleAboutImageChange(event) {
   };
   reader.readAsDataURL(file);
 }
-
-// Stock Management Functions
-function initializeStockManagement() {
-  if (!daySelect || !productsStock || !saveWeeklyStock) return;
-
-  loadProductsForStock();
-  setupStockEventListeners();
-  setupDatePicker();
-}
-
-function setupStockEventListeners() {
-  if (daySelect) {
-    daySelect.addEventListener('change', (e) => {
-      const selectedValue = e.target.value;
-      if (selectedValue === '') {
-        showAllProductsInStock();
-        return;
-      }
-      currentDayIndex = parseInt(selectedValue);
-      loadDayStock(currentDayIndex);
-      filterProductsInStockByDay(currentDayIndex);
-    });
-  }
-
-  if (saveWeeklyStock) {
-    saveWeeklyStock.addEventListener('click', saveWeeklyStockData);
-  }
-
-  if (saveDateStock) {
-    saveDateStock.addEventListener('click', saveDateStockData);
-  }
-}
-
-function setupDatePicker() {
-  if (!dateSelect) return;
-
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-
-  flatpickr(dateSelect, {
-    minDate: tomorrow,
-    dateFormat: "Y-m-d",
-    altInput: true,
-    altFormat: "d F Y",
-    locale: "pl",
-    onChange: function(selectedDates, dateStr, instance) {
-      currentDate = selectedDates[0];
-      if (currentDate) {
-        loadDateStock(currentDate);
-      }
-    }
-  });
-}
-
-async function loadProductsForStock() {
-  try {
-    const response = await fetch('/api/products');
-    if (!response.ok) throw new Error('Błąd pobierania produktów');
-    products = await response.json();
-    renderProductsStock(productsStock, products, currentDayIndex);
-    loadStockOverview();
-  } catch (error) {
-    console.error('Błąd ładowania produktów:', error);
-    showStockMessage('Błąd ładowania produktów', 'error');
-  }
-}
-
-function renderProductsStock(container, products, dayIndex) {
-  if (!container) return;
-
-  container.innerHTML = '';
-
-  products.forEach(product => {
-    const productDiv = document.createElement('div');
-    productDiv.className = 'product-stock-item';
-    productDiv.innerHTML = `
-      <div class="product-info">
-        <span class="product-name">${product.name}</span>
-        <span class="product-price">${product.price} zł</span>
-      </div>
-      <div class="stock-control">
-        <label for="stock-${product._id}">Ilość:</label>
-        <input type="number"
-               id="stock-${product._id}"
-               class="stock-input"
-               min="0"
-               value="0"
-               data-product-id="${product._id}">
-      </div>
-    `;
-    container.appendChild(productDiv);
-  });
-}
-
-async function loadDayStock(dayIndex) {
-  try {
-    const response = await fetch(`/api/stock/${dayIndex}`);
-    if (!response.ok) throw new Error('Błąd pobierania stanów');
-    const stockData = await response.json();
-
-    // Update input values with current stock
-    stockData.forEach(item => {
-      const input = document.querySelector(`#stock-${item.productId}`);
-      if (input) {
-        input.value = item.remaining;
-      }
-    });
-
-    showStockMessage(`Załadowano stany dla ${DAYS_OF_WEEK[dayIndex]}`, 'success');
-  } catch (error) {
-    console.error('Błąd ładowania stanów:', error);
-    showStockMessage('Błąd ładowania stanów', 'error');
-  }
-}
-
-async function loadDateStock(date) {
-  if (!date) return;
-
-  try {
-    const dayIndex = (date.getDay() + 6) % 7; // Convert to Monday=0 format
-    const response = await fetch(`/api/stock/${dayIndex}`);
-    if (!response.ok) throw new Error('Błąd pobierania stanów');
-    const stockData = await response.json();
-
-    // Render products for specific date
-    renderProductsStock(dateProductsStock, products, dayIndex);
-
-    // Update input values with current stock
-    stockData.forEach(item => {
-      const input = dateProductsStock.querySelector(`#stock-${item.productId}`);
-      if (input) {
-        input.value = item.remaining;
-      }
-    });
-
-    showStockMessage(`Załadowano stany dla ${date.toLocaleDateString('pl-PL')}`, 'success');
-  } catch (error) {
-    console.error('Błąd ładowania stanów dla daty:', error);
-    showStockMessage('Błąd ładowania stanów dla daty', 'error');
-  }
-}
-
-async function saveWeeklyStockData() {
-  try {
-    const stockData = collectStockData(productsStock);
-    const dayIndex = parseInt(daySelect.value);
-
-    const response = await fetch('/api/stock', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(stockData.map(item => ({
-        productId: item.productId,
-        dayIndex: dayIndex,
-        capacity: item.capacity
-      })))
-    });
-
-    if (!response.ok) throw new Error('Błąd zapisywania stanów');
-
-    showStockMessage(`Zapisano stany dla ${DAYS_OF_WEEK[dayIndex]}`, 'success');
-    loadStockOverview();
-  } catch (error) {
-    console.error('Błąd zapisywania stanów:', error);
-    showStockMessage('Błąd zapisywania stanów', 'error');
-  }
-}
-
-async function saveDateStockData() {
-  if (!currentDate) {
-    showStockMessage('Wybierz datę', 'error');
-    return;
-  }
-
-  try {
-    const stockData = collectStockData(dateProductsStock);
-    const dayIndex = (currentDate.getDay() + 6) % 7;
-
-    const response = await fetch('/api/stock', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(stockData.map(item => ({
-        productId: item.productId,
-        dayIndex: dayIndex,
-        capacity: item.capacity
-      })))
-    });
-
-    if (!response.ok) throw new Error('Błąd zapisywania stanów');
-
-    showStockMessage(`Zapisano stany dla ${currentDate.toLocaleDateString('pl-PL')}`, 'success');
-    loadStockOverview();
-  } catch (error) {
-    console.error('Błąd zapisywania stanów:', error);
-    showStockMessage('Błąd zapisywania stanów', 'error');
-  }
-}
-
-function collectStockData(container) {
-  const inputs = container.querySelectorAll('.stock-input');
-  const stockData = [];
-
-  inputs.forEach(input => {
-    const productId = input.dataset.productId;
-    const capacity = parseInt(input.value) || 0;
-
-    if (productId) {
-      stockData.push({ productId, capacity });
-    }
-  });
-
-  return stockData;
-}
-
-async function loadStockOverview() {
-  try {
-    const response = await fetch('/api/stock/overview');
-    if (!response.ok) throw new Error('Błąd pobierania przeglądu');
-    const overview = await response.json();
-
-    renderStockOverview(overview);
-  } catch (error) {
-    console.error('Błąd ładowania przeglądu:', error);
-  }
-}
-
-function renderStockOverview(overview) {
-  if (!stockOverview) return;
-
-  stockOverview.innerHTML = '';
-
-  const table = document.createElement('table');
-  table.className = 'stock-table';
-
-  // Header
-  const header = document.createElement('tr');
-  header.innerHTML = `
-    <th>Produkt</th>
-    <th>Poniedziałek</th>
-    <th>Wtorek</th>
-    <th>Środa</th>
-    <th>Czwartek</th>
-    <th>Piątek</th>
-    <th>Sobota</th>
-    <th>Niedziela</th>
-  `;
-  table.appendChild(header);
-
-  // Rows for each product
-  overview.forEach(product => {
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td class="product-name">${product.name}</td>
-      <td>${product.stock[0] || 0}</td>
-      <td>${product.stock[1] || 0}</td>
-      <td>${product.stock[2] || 0}</td>
-      <td>${product.stock[3] || 0}</td>
-      <td>${product.stock[4] || 0}</td>
-      <td>${product.stock[5] || 0}</td>
-      <td>${product.stock[6] || 0}</td>
-    `;
-    table.appendChild(row);
-  });
-
-  stockOverview.appendChild(table);
-}
-
-function showStockMessage(message, type) {
-  // Create or update message element
-  let messageEl = document.querySelector('.stock-message');
-  if (!messageEl) {
-    messageEl = document.createElement('div');
-    messageEl.className = 'stock-message';
-    document.body.appendChild(messageEl);
-  }
-
-  messageEl.textContent = message;
-  messageEl.className = `stock-message ${type}`;
-
-  // Auto-hide after 3 seconds
-  setTimeout(() => {
-    if (messageEl) {
-      messageEl.remove();
-    }
-  }, 3000);
-}
-
-function filterProductsInStockByDay(dayIndex) {
-  if (!productsStock) return;
-
-  const productItems = productsStock.querySelectorAll('.product-stock-item');
-
-  productItems.forEach(item => {
-    const productId = item.querySelector('.stock-input')?.dataset.productId;
-    if (!productId) return;
-
-    // Find the product in our products array
-    const product = products.find(p => p._id === productId);
-    if (!product) return;
-
-    // Check if product is available on the selected day
-    const isAvailableOnDay = product.availabilityDays &&
-                            Array.isArray(product.availabilityDays) &&
-                            product.availabilityDays.includes(dayIndex);
-
-    if (isAvailableOnDay) {
-      item.style.display = 'block';
-    } else {
-      item.style.display = 'none';
-    }
-  });
-}
-
-function showAllProductsInStock() {
-  if (!productsStock) return;
-
-  const productItems = productsStock.querySelectorAll('.product-stock-item');
-  productItems.forEach(item => {
-    item.style.display = 'block';
-  });
-}
-
-// Initialize stock management when page loads
-document.addEventListener('DOMContentLoaded', () => {
-  initializeStockManagement();
-});

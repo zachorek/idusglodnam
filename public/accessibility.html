@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dostępność i odbiory</title>
   <link rel="stylesheet" href="style.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 </head>
 <body>
   <nav class="navbar">
@@ -46,11 +45,7 @@
 
     <section class="availability-week">
       <div class="availability-controls glass-panel">
-        <div class="availability-field" style="flex:1; text-align: center;">
-          <h3 style="margin-bottom: 15px; color: #333;">Wybierz datę, aby sprawdzić dostępność produktów</h3>
-          <div id="availabilityDate"></div>
-        </div>
-        <div id="availabilityStock" class="availability-stock"></div>
+        <p class="availability-placeholder">Poniżej znajdziesz harmonogram odbiorów — sprawdź, które wypieki są gotowe danego dnia i od której godziny.</p>
       </div>
 
       <div id="availabilityGrid" class="availability-grid"></div>
@@ -58,7 +53,6 @@
     </section>
   </main>
 
-  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
   <script src="script.js"></script>
   <script src="accessibility.js"></script>
 </body>

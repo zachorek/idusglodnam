@@ -74,20 +74,25 @@ async function handleDatePicked(date) {
     if (!res.ok) throw new Error('Błąd pobierania produktów');
     const products = await res.json();
 
+    // Load stock data for this day
+    const stockRes = await fetch(`/api/stock/${dayIndex}`);
+    if (!stockRes.ok) throw new Error('Błąd pobierania stanów');
+    const stockData = await stockRes.json();
+
     // Update the selected date display
     const selectedDateElement = document.getElementById('selectedAvailabilityDate');
     if (selectedDateElement) {
       selectedDateElement.textContent = `${dayName}, ${date.toLocaleDateString('pl-PL')}`;
     }
 
-    renderProductsForDay(products, dayName);
+    renderProductsForDay(products, dayName, stockData);
   } catch (err) {
     console.error('Błąd pobierania produktów:', err);
     if (availabilityStock) availabilityStock.textContent = 'Nie udało się pobrać produktów dla wybranej daty.';
   }
 }
 
-function renderProductsForDay(products, dayName) {
+function renderProductsForDay(products, dayName, stockData = []) {
   if (!availabilityStock) {
     return;
   }
@@ -106,15 +111,35 @@ function renderProductsForDay(products, dayName) {
   const list = document.createElement('ul');
   list.className = 'availability-stock-list';
 
+  // Create a map of stock data for quick lookup
+  const stockMap = new Map();
+  stockData.forEach(item => {
+    stockMap.set(item.productId, item);
+  });
+
   products.forEach((product) => {
+    const stockInfo = stockMap.get(product._id);
+    const remaining = stockInfo ? stockInfo.remaining : 0;
+
     const li = document.createElement('li');
     li.className = 'availability-stock-item';
+
+    // Add sold-out class if no stock remaining
+    if (remaining === 0) {
+      li.classList.add('sold-out');
+    }
+
     li.innerHTML = `
       <div class="product-info">
         <span class="product-name">${product.name}</span>
-        <span class="product-price">${product.price} zł</span>
       </div>
       <div class="product-description">${product.description || ''}</div>
+      <div class="product-stock">
+        ${remaining > 0
+          ? `<span class="stock-info">Pozostało: ${remaining} szt.</span>`
+          : `<span class="sold-out-tag">WYPRZEDANE</span>`
+        }
+      </div>
     `;
     list.appendChild(li);
   });

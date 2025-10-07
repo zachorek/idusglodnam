@@ -91,10 +91,10 @@ function createAvailabilityCard(day, index) {
     });
 
     const firstWithTime = sorted.find((entry) => entry.availableFrom);
-    if (firstWithTime && firstWithTime.availableFrom) {
-      timeInfo.textContent = `Najwcześniej od ${normalizeTimeLabel(firstWithTime.availableFrom)}`;
-    } else {
+    if (!firstWithTime || !firstWithTime.availableFrom) {
       timeInfo.textContent = 'Wypieki dostępne w ciągu dnia.';
+    } else {
+      timeInfo.textContent = '';
     }
 
     sorted.forEach((entry) => {

@@ -5,12 +5,17 @@ const aboutGalleryModal = document.getElementById('aboutGalleryModal');
 const aboutGalleryModalGrid = document.getElementById('aboutGalleryModalGrid');
 const aboutGalleryModalClose = aboutGalleryModal ? aboutGalleryModal.querySelector('.about-gallery-modal__close') : null;
 const DEFAULT_ABOUT_TEXT = 'Chachor Piecze to niewielki zespół piekarzy i cukierników, którzy robią codzienne wypieki w rytmie miasta.';
+const INITIAL_PREVIEW_COUNT = 1;
+const PREVIEW_COUNT_AFTER_LOAD = 7;
 let aboutGalleryData = [];
+let aboutGalleryTotal = 0;
+let aboutGalleryLoadedAll = false;
+let aboutGalleryLoading = false;
 
 function applyAboutContent(content) {
-  const galleryItems = content && Array.isArray(content.gallery) ? content.gallery : [];
-  renderAboutGallery(galleryItems);
-  renderAboutGalleryModal(galleryItems);
+  updateGalleryState(content);
+  renderAboutGallery();
+  renderAboutGalleryModal();
 
   if (!aboutHero || !aboutDescription) {
     return;
@@ -31,12 +36,11 @@ function applyAboutContent(content) {
   }
 }
 
-function renderAboutGallery(items) {
+function renderAboutGallery() {
   if (!aboutGallery) {
     return;
   }
 
-  aboutGalleryData = Array.isArray(items) ? items.filter((item) => item && item.imageData) : [];
   aboutGallery.innerHTML = '';
 
   if (!aboutGalleryData.length) {
@@ -48,7 +52,9 @@ function renderAboutGallery(items) {
   }
 
   const fragment = document.createDocumentFragment();
-  const previewLimit = 7;
+  const previewLimit = aboutGalleryLoadedAll
+    ? Math.min(PREVIEW_COUNT_AFTER_LOAD, aboutGalleryData.length)
+    : Math.min(INITIAL_PREVIEW_COUNT, aboutGalleryData.length);
   const previewItems = aboutGalleryData.slice(0, previewLimit);
 
   previewItems.forEach((item, index) => {
@@ -63,7 +69,20 @@ function renderAboutGallery(items) {
     fragment.appendChild(figure);
   });
 
-  if (aboutGalleryData.length > previewLimit) {
+  const totalForPreview = aboutGalleryLoadedAll ? aboutGalleryData.length : aboutGalleryTotal;
+  const remainingCount = aboutGalleryLoadedAll
+    ? Math.max(aboutGalleryData.length - previewItems.length, 0)
+    : Math.max(aboutGalleryTotal - previewItems.length, 0);
+
+  if (!aboutGalleryLoadedAll) {
+    const baseSkeletonLimit = Math.max(PREVIEW_COUNT_AFTER_LOAD - previewItems.length, 2);
+    const skeletonCount = aboutGalleryLoading
+      ? Math.min(Math.max(remainingCount, baseSkeletonLimit), 6)
+      : Math.min(Math.max(remainingCount, 0), Math.min(baseSkeletonLimit, 3));
+    appendGallerySkeletons(fragment, skeletonCount, 'about-gallery__item');
+  }
+
+  if (!aboutGalleryLoadedAll && !aboutGalleryLoading && totalForPreview > previewItems.length && remainingCount > 0) {
     const moreTile = document.createElement('button');
     moreTile.type = 'button';
     moreTile.classList.add('about-gallery__item', 'about-gallery__more');
@@ -71,7 +90,7 @@ function renderAboutGallery(items) {
     moreTile.setAttribute('aria-label', 'Zobacz więcej zdjęć');
     moreTile.innerHTML = `
       <span class="about-gallery__more-label">Zobacz więcej</span>
-      <span class="about-gallery__more-count">(${aboutGalleryData.length})</span>
+      <span class="about-gallery__more-count">(+${remainingCount})</span>
     `;
     fragment.appendChild(moreTile);
   }
@@ -79,12 +98,12 @@ function renderAboutGallery(items) {
   aboutGallery.appendChild(fragment);
 }
 
-function renderAboutGalleryModal(items) {
+function renderAboutGalleryModal() {
   if (!aboutGalleryModalGrid) {
     return;
   }
   aboutGalleryModalGrid.innerHTML = '';
-  const list = Array.isArray(items) ? items.filter((item) => item && item.imageData) : [];
+  const list = aboutGalleryData;
   if (!list.length) {
     const empty = document.createElement('p');
     empty.classList.add('about-gallery-modal__empty');
@@ -103,7 +122,42 @@ function renderAboutGalleryModal(items) {
     figure.appendChild(image);
     fragment.appendChild(figure);
   });
+
+  if (!aboutGalleryLoadedAll) {
+    appendGallerySkeletons(fragment, 4, 'about-gallery-modal__item');
+  }
+
   aboutGalleryModalGrid.appendChild(fragment);
+}
+
+function updateGalleryState(content) {
+  const items = buildGalleryItems(content);
+  aboutGalleryData = items;
+  const hasGalleryCount = content && typeof content.galleryCount === 'number';
+  aboutGalleryTotal = hasGalleryCount ? content.galleryCount : items.length;
+  const receivedGallery = content && Array.isArray(content.gallery) ? content.gallery : [];
+  aboutGalleryLoadedAll = receivedGallery.length >= aboutGalleryTotal || aboutGalleryTotal <= items.length;
+}
+
+function buildGalleryItems(content) {
+  const gallery = content && Array.isArray(content.gallery)
+    ? content.gallery.filter((item) => item && item.imageData)
+    : [];
+
+  const list = gallery.slice();
+  const heroImage = content && content.heroImageData ? content.heroImageData : '';
+
+  if (heroImage) {
+    const existingIndex = list.findIndex((item) => item && item.imageData === heroImage);
+    if (existingIndex > 0) {
+      const [heroItem] = list.splice(existingIndex, 1);
+      list.unshift(heroItem);
+    } else if (existingIndex === -1) {
+      list.unshift({ _id: null, imageData: heroImage });
+    }
+  }
+
+  return list;
 }
 
 function openAboutGalleryModal() {
@@ -124,6 +178,46 @@ function closeAboutGalleryModal() {
   document.body.classList.remove('about-gallery-modal-open');
 }
 
+async function handleGallerySeeMoreClick() {
+  if (aboutGalleryLoading) {
+    return;
+  }
+
+  let fetchFailed = false;
+
+  if (!aboutGalleryLoadedAll) {
+    try {
+      aboutGalleryLoading = true;
+      renderAboutGallery();
+      const res = await fetch('/api/about?includeGallery=1');
+      if (!res.ok) {
+        throw new Error('Nie udało się załadować galerii');
+      }
+      const data = await res.json();
+      updateGalleryState(data);
+      renderAboutGallery();
+      renderAboutGalleryModal();
+    } catch (err) {
+      console.error('Błąd ładowania pełnej galerii:', err);
+      fetchFailed = true;
+    } finally {
+      aboutGalleryLoading = false;
+    }
+  }
+
+  if (fetchFailed || !aboutGalleryData.length) {
+    renderAboutGallery();
+    return;
+  }
+
+  renderAboutGalleryModal();
+  openAboutGalleryModal();
+
+  if (!aboutGalleryLoadedAll) {
+    renderAboutGallery();
+  }
+}
+
 if (aboutGallery) {
   aboutGallery.addEventListener('click', (event) => {
     const button = event.target instanceof HTMLElement
@@ -132,11 +226,7 @@ if (aboutGallery) {
     if (!button) {
       return;
     }
-    if (!aboutGalleryData.length) {
-      return;
-    }
-    renderAboutGalleryModal(aboutGalleryData);
-    openAboutGalleryModal();
+    handleGallerySeeMoreClick();
   });
 }
 
@@ -160,7 +250,7 @@ window.addEventListener('keydown', (event) => {
 
 async function loadAboutContent() {
   try {
-    const res = await fetch('/api/about');
+    const res = await fetch('/api/about?includeGallery=0');
     if (!res.ok) {
       throw new Error('Request failed');
     }
@@ -169,6 +259,16 @@ async function loadAboutContent() {
   } catch (err) {
     console.error('Błąd pobierania sekcji O nas:', err);
     applyAboutContent(null);
+  }
+}
+
+function appendGallerySkeletons(target, count, baseClass = 'about-gallery__item') {
+  const total = Number(count) || 0;
+  const clamped = Math.max(Math.min(total, 6), 0);
+  for (let i = 0; i < clamped; i += 1) {
+    const skeleton = document.createElement('div');
+    skeleton.classList.add(baseClass, `${baseClass}--skeleton`);
+    target.appendChild(skeleton);
   }
 }
 

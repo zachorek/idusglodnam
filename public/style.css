@@ -604,12 +604,20 @@ body.modal-open.page-transition-ready.page-transition-leave {
   line-height: 1.15;
 }
 
+.about-hero__inner,
+.about-hero__inner h1,
+.about-hero__inner p {
+  color: #fdfbd4;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
 .about-hero__eyebrow {
   display: inline-flex;
   align-self: center;
   padding: 6px 20px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 249, 236, 0.82);
+  color: #3f2614;
   font-weight: 600;
   letter-spacing: 0.22em;
   text-transform: uppercase;
@@ -1375,6 +1383,15 @@ body.modal-open.page-transition-ready.page-transition-leave {
   margin-top: 12px;
   color: #6f4f37;
   font-size: 1.1rem;
+}
+
+.about-hero .hero-inner p {
+  color: #fdfbd4;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+.about-hero .about-hero__eyebrow {
+  color: #3f2614;
 }
 
 .cart-layout {

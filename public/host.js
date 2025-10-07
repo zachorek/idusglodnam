@@ -23,6 +23,8 @@ const aboutPreviewText = document.getElementById("aboutPreviewText");
 const aboutPreviewImage = document.getElementById("aboutPreviewImage");
 const aboutNoImagePlaceholder = document.getElementById("aboutNoImagePlaceholder");
 
+const PRODUCTS_CACHE_KEY = 'chachor.productsCache';
+
 const DAYS_OF_WEEK = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela'];
 const PRODUCT_DAY_ABBREVIATIONS = ['PN', 'WT', 'ŚR', 'CZ', 'PT', 'SO', 'ND'];
 const MAX_AVAILABILITY_TILES = 6;
@@ -178,6 +180,7 @@ if (hostForm) {
       if (imageInput) {
         imageInput.value = '';
       }
+      invalidateStorefrontProductsCache();
       if (productGrid) {
         fetchProducts();
       }
@@ -412,12 +415,7 @@ function createAvailabilityCard(day) {
   title.textContent = day.dayName || DAYS_OF_WEEK[day.dayIndex] || '';
   header.appendChild(title);
 
-  const updated = document.createElement('span');
-  updated.className = 'availability-card-updated';
-  if (day.updatedAt) {
-    updated.textContent = `Ostatnia aktualizacja: ${new Date(day.updatedAt).toLocaleString('pl-PL')}`;
-  }
-  header.appendChild(updated);
+  // No longer display last update metadata; the header stays minimal.
 
   const entriesSection = document.createElement('div');
   entriesSection.className = 'availability-entries-section';
@@ -524,12 +522,6 @@ function updateAvailabilityCard(card, updated) {
     populateAvailabilityEntries(entriesContainer, updated && Array.isArray(updated.entries) ? updated.entries : []);
   }
 
-  const updatedLabel = card.querySelector('.availability-card-updated');
-  if (updatedLabel) {
-    updatedLabel.textContent = updated && updated.updatedAt
-      ? `Ostatnia aktualizacja: ${new Date(updated.updatedAt).toLocaleString('pl-PL')}`
-      : '';
-  }
 }
 
 function showAvailabilityNotice(type, message) {
@@ -801,10 +793,19 @@ async function handleProductGridClick(event) {
       throw new Error('Błąd usuwania produktu');
     }
 
+    invalidateStorefrontProductsCache();
     fetchProducts(true);
   } catch (err) {
     console.error('Błąd usuwania produktu:', err);
     alert('Nie udało się usunąć produktu. Spróbuj ponownie.');
+  }
+}
+
+function invalidateStorefrontProductsCache() {
+  try {
+    sessionStorage.removeItem(PRODUCTS_CACHE_KEY);
+  } catch (err) {
+    // Storage access might be restricted (e.g. in private mode); ignore.
   }
 }
 

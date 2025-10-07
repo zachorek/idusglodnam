@@ -61,5 +61,34 @@
 
   <script src="script.js"></script>
   <script src="about.js"></script>
+
+  <footer class="site-footer">
+    <div class="site-footer__inner">
+      <div class="site-footer__section">
+        <h2 class="site-footer__heading">Skontaktuj się z nami</h2>
+        <p class="site-footer__text">Jesteśmy dostępni pod poniższymi danymi kontaktowymi.</p>
+      </div>
+      <div class="site-footer__section">
+        <h3 class="site-footer__label">Adres</h3>
+        <p class="site-footer__value">Kaczyniec 20, 44-100 Gliwice</p>
+      </div>
+      <div class="site-footer__section">
+        <h3 class="site-footer__label">Telefon</h3>
+        <p class="site-footer__value"><a href="tel:735916898">735&nbsp;916&nbsp;898</a></p>
+      </div>
+      <div class="site-footer__section">
+        <h3 class="site-footer__label">E-mail</h3>
+        <p class="site-footer__value"><a href="mailto:kontakt@chachorpiecze.pl">kontakt@chachorpiecze.pl</a></p>
+      </div>
+    </div>
+    <p class="site-footer__note">© <span class="siteFooterYear"></span> Chachor Piecze. Wszelkie prawa zastrzeżone.</p>
+  </footer>
+  <script>
+    (function updateFooterYears() {
+      document.querySelectorAll('.siteFooterYear').forEach((node) => {
+        node.textContent = new Date().getFullYear();
+      });
+    })();
+  </script>
 </body>
 </html>

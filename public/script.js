@@ -919,6 +919,7 @@ function openCartActionModal(productName) {
 
   cartActionModal.classList.add('open');
   cartActionModal.setAttribute('aria-hidden', 'false');
+  lockBodyScroll();
 
   const focusTarget = cartActionGoToCart || cartActionContinue || cartActionClose;
   if (focusTarget) {
@@ -933,6 +934,7 @@ function closeCartActionModal() {
 
   cartActionModal.classList.remove('open');
   cartActionModal.setAttribute('aria-hidden', 'true');
+  unlockBodyScroll();
 
   if (lastCartActionFocusedElement) {
     safeFocus(lastCartActionFocusedElement);

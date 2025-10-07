@@ -135,9 +135,15 @@ const discountCodeSchema = new mongoose.Schema({
 
 const DiscountCode = mongoose.model('DiscountCode', discountCodeSchema);
 
+const aboutGalleryItemSchema = new mongoose.Schema({
+  imageData: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now }
+}, { _id: true });
+
 const AboutContent = mongoose.model('AboutContent', new mongoose.Schema({
   heroImageData: String,
-  heroText: { type: String, default: '' }
+  heroText: { type: String, default: '' },
+  gallery: { type: [aboutGalleryItemSchema], default: [] }
 }, { timestamps: true }));
 
 // Per-product per-day stock (capacity and reserved)
@@ -208,13 +214,15 @@ app.get('/api/products', async (req, res) => {
 app.get('/api/about', async (req, res) => {
   try {
     const about = await AboutContent.findOne().lean();
+    const payload = {
+      heroImageData: about && about.heroImageData ? about.heroImageData : '',
+      heroText: about && about.heroText ? about.heroText : DEFAULT_ABOUT_TEXT,
+      gallery: about && Array.isArray(about.gallery) ? about.gallery : []
+    };
     if (!about) {
-      return res.json({ heroImageData: '', heroText: DEFAULT_ABOUT_TEXT });
+      payload.gallery = [];
     }
-    if (!about.heroText) {
-      about.heroText = DEFAULT_ABOUT_TEXT;
-    }
-    res.json(about);
+    res.json(payload);
   } catch (err) {
     console.error('Błąd pobierania sekcji O nas:', err);
     res.status(500).json({ error: 'Błąd pobierania sekcji O nas' });
@@ -422,13 +430,57 @@ app.post('/api/about', upload.single('aboutImage'), async (req, res) => {
     }
 
     const about = await AboutContent.findOneAndUpdate({}, { $set: update }, { upsert: true, new: true, setDefaultsOnInsert: true }).lean();
-    if (!about.heroText) {
-      about.heroText = DEFAULT_ABOUT_TEXT;
-    }
-    res.json(about);
+    const payload = {
+      heroImageData: about && about.heroImageData ? about.heroImageData : '',
+      heroText: about && about.heroText ? about.heroText : DEFAULT_ABOUT_TEXT,
+      gallery: about && Array.isArray(about.gallery) ? about.gallery : []
+    };
+    res.json(payload);
   } catch (err) {
     console.error('Błąd zapisu sekcji O nas:', err);
     res.status(500).json({ error: 'Nie udało się zapisać sekcji O nas' });
+  }
+});
+
+app.post('/api/about/gallery', upload.single('galleryImage'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Brak zdjęcia do zapisania' });
+    }
+    const base64Image = req.file.buffer.toString('base64');
+    const imageData = `data:${req.file.mimetype};base64,${base64Image}`;
+    const about = await AboutContent.findOneAndUpdate(
+      {},
+      { $push: { gallery: { imageData, createdAt: new Date() } } },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    ).lean();
+    res.json({ gallery: about && Array.isArray(about.gallery) ? about.gallery : [] });
+  } catch (err) {
+    console.error('Błąd dodawania zdjęcia do galerii:', err);
+    res.status(500).json({ error: 'Nie udało się dodać zdjęcia do galerii' });
+  }
+});
+
+app.delete('/api/about/gallery/:imageId', async (req, res) => {
+  try {
+    const { imageId } = req.params;
+    if (!imageId) {
+      return res.status(400).json({ error: 'Brak identyfikatora zdjęcia' });
+    }
+    const about = await AboutContent.findOne();
+    if (!about) {
+      return res.status(404).json({ error: 'Galeria jest pusta' });
+    }
+    const item = about.gallery.id(imageId);
+    if (!item) {
+      return res.status(404).json({ error: 'Nie znaleziono zdjęcia w galerii' });
+    }
+    item.deleteOne();
+    await about.save();
+    res.json({ gallery: about.gallery });
+  } catch (err) {
+    console.error('Błąd usuwania zdjęcia z galerii:', err);
+    res.status(500).json({ error: 'Nie udało się usunąć zdjęcia z galerii' });
   }
 });
 

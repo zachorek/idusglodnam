@@ -151,6 +151,22 @@
         </figure>
         <p class="host-about-preview__text" id="aboutPreviewText"></p>
       </div>
+
+      <div class="host-about-gallery">
+        <div class="host-about-gallery__header">
+          <h3>Galeria zdjęć</h3>
+          <p>Dodaj zdjęcia, które pokażą klientów Waszą piekarnię od środka.</p>
+        </div>
+        <form id="aboutGalleryForm" class="host-about-gallery__form" enctype="multipart/form-data">
+          <label class="about-field host-about-gallery__field">
+            <span>Nowe zdjęcie</span>
+            <input type="file" id="aboutGalleryImage" name="aboutGalleryImage" accept="image/*" required>
+          </label>
+          <button type="submit" class="host-primary-btn host-primary-btn--compact">Dodaj do galerii</button>
+        </form>
+        <div id="aboutGalleryMessage" class="host-message" aria-live="polite"></div>
+        <div id="aboutGalleryList" class="host-gallery-grid"></div>
+      </div>
     </section>
 
     <section id="products" class="products-section glass-panel host-card host-card--wide">

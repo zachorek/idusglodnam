@@ -21,7 +21,7 @@
   </ul>
   <div class="nav-right">
     <a href="/cart" class="cart">
-      🛒 Koszyk <span id="cartCount">0</span>
+      👜 Koszyk <span id="cartCount">0</span>
     </a>
   </div>
   </nav>
@@ -36,6 +36,19 @@
   </header>
 
   <main class="about-layout">
+    <section class="about-gallery glass-panel">
+      <h2>Galeria piekarni</h2>
+      <p>Zajrzyj za kulisy naszych wypieków i zobacz, co dzieje się w piekarni.</p>
+      <div id="aboutGallery" class="about-gallery__grid" aria-live="polite"></div>
+    </section>
+    <div id="aboutGalleryModal" class="about-gallery-modal" aria-hidden="true" role="dialog" aria-modal="true">
+      <div class="about-gallery-modal__content" role="document">
+        <button type="button" class="about-gallery-modal__close" aria-label="Zamknij galerię">×</button>
+        <h2>Pełna galeria</h2>
+        <div id="aboutGalleryModalGrid" class="about-gallery-modal__grid"></div>
+      </div>
+    </div>
+
     <section class="glass-panel about-story">
       <h2>Co robimy na co dzień</h2>
       <p>Pieczemy chleb, bułki i słodkie wypieki z prostych składników. Ciasto wyrabiamy ręcznie, a piec rozgrzewamy nad ranem, żebyś mógł odebrać zamówienie jeszcze ciepłe.</p>

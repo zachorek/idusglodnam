@@ -22,6 +22,10 @@ const aboutMessage = document.getElementById("aboutMessage");
 const aboutPreviewText = document.getElementById("aboutPreviewText");
 const aboutPreviewImage = document.getElementById("aboutPreviewImage");
 const aboutNoImagePlaceholder = document.getElementById("aboutNoImagePlaceholder");
+const aboutGalleryForm = document.getElementById("aboutGalleryForm");
+const aboutGalleryImageInput = document.getElementById("aboutGalleryImage");
+const aboutGalleryList = document.getElementById("aboutGalleryList");
+const aboutGalleryMessage = document.getElementById("aboutGalleryMessage");
 
 const PRODUCTS_CACHE_KEY = 'chachor.productsCache';
 
@@ -34,6 +38,7 @@ let categoriesCache = [];
 let discountCodesCache = [];
 let productGridListenerAttached = false;
 let availabilityMessageTimer = null;
+let aboutGalleryCache = [];
 
 if (categoryList) {
   fetchCategories();
@@ -72,6 +77,14 @@ if (aboutImageInput) {
 
 if (aboutForm) {
   aboutForm.addEventListener('submit', handleAboutFormSubmit);
+}
+
+if (aboutGalleryForm) {
+  aboutGalleryForm.addEventListener('submit', handleAboutGalleryFormSubmit);
+}
+
+if (aboutGalleryList) {
+  aboutGalleryList.addEventListener('click', handleAboutGalleryListClick);
 }
 
 function truncateText(text, maxLength) {
@@ -1133,25 +1146,30 @@ async function fetchAboutContent() {
 
     const data = await res.json();
     applyAboutPreview(data);
+    renderAboutGallery(data && Array.isArray(data.gallery) ? data.gallery : []);
   } catch (err) {
     console.error('Błąd pobierania sekcji O nas:', err);
     applyAboutPreview(null);
+    renderAboutGallery([]);
   }
 }
 
 function applyAboutPreview(data) {
-  const text = data && data.aboutText ? data.aboutText : DEFAULT_ABOUT_TEXT;
+  const text = data && data.heroText ? data.heroText : DEFAULT_ABOUT_TEXT;
   if (aboutPreviewText) {
     aboutPreviewText.textContent = text;
+  }
+  if (aboutTextInput) {
+    aboutTextInput.value = text;
   }
 
   if (!aboutPreviewImage || !aboutNoImagePlaceholder) {
     return;
   }
 
-  const hasImage = data && data.aboutImageData;
+  const hasImage = data && data.heroImageData;
   if (hasImage) {
-    aboutPreviewImage.src = data.aboutImageData;
+    aboutPreviewImage.src = data.heroImageData;
     aboutPreviewImage.hidden = false;
     aboutNoImagePlaceholder.hidden = true;
   } else {
@@ -1197,6 +1215,9 @@ async function handleAboutFormSubmit(event) {
 
     const data = await res.json();
     applyAboutPreview(data);
+    if (data && Array.isArray(data.gallery)) {
+      renderAboutGallery(data.gallery);
+    }
 
     if (aboutImageInput) {
       aboutImageInput.value = '';
@@ -1239,4 +1260,137 @@ function handleAboutImageChange(event) {
     }
   };
   reader.readAsDataURL(file);
+}
+
+function renderAboutGallery(items) {
+  if (!aboutGalleryList) {
+    return;
+  }
+
+  aboutGalleryCache = Array.isArray(items) ? items.slice() : [];
+  aboutGalleryList.innerHTML = '';
+
+  if (!aboutGalleryCache.length) {
+    const empty = document.createElement('p');
+    empty.classList.add('host-gallery-empty');
+    empty.textContent = 'Brak zdjęć w galerii.';
+    aboutGalleryList.appendChild(empty);
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  aboutGalleryCache.forEach((item, index) => {
+    if (!item || !item.imageData) {
+      return;
+    }
+    const figure = document.createElement('figure');
+    figure.classList.add('host-gallery-item');
+
+    const image = document.createElement('img');
+    image.src = item.imageData;
+    image.alt = `Zdjęcie galerii ${index + 1}`;
+    figure.appendChild(image);
+
+    if (item._id) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.classList.add('host-gallery-delete');
+      button.dataset.role = 'remove-gallery-image';
+      button.dataset.imageId = item._id;
+      button.setAttribute('aria-label', 'Usuń zdjęcie z galerii');
+      button.textContent = '×';
+      figure.appendChild(button);
+    }
+
+    fragment.appendChild(figure);
+  });
+
+  aboutGalleryList.appendChild(fragment);
+}
+
+function showAboutGalleryMessage(type, message) {
+  if (!aboutGalleryMessage) {
+    return;
+  }
+
+  aboutGalleryMessage.textContent = message || '';
+  aboutGalleryMessage.classList.remove('success', 'error');
+  if (type) {
+    aboutGalleryMessage.classList.add(type);
+  }
+}
+
+async function handleAboutGalleryFormSubmit(event) {
+  event.preventDefault();
+
+  if (!aboutGalleryImageInput || !aboutGalleryImageInput.files || !aboutGalleryImageInput.files[0]) {
+    showAboutGalleryMessage('error', 'Wybierz zdjęcie, aby dodać je do galerii.');
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('galleryImage', aboutGalleryImageInput.files[0]);
+  showAboutGalleryMessage(null, 'Dodaję zdjęcie do galerii...');
+
+  try {
+    const res = await fetch('/api/about/gallery', {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!res.ok) {
+      const errorPayload = await res.json().catch(() => ({}));
+      const message = errorPayload && errorPayload.error ? errorPayload.error : 'Nie udało się dodać zdjęcia.';
+      throw new Error(message);
+    }
+
+    const data = await res.json();
+    renderAboutGallery(data && Array.isArray(data.gallery) ? data.gallery : []);
+    showAboutGalleryMessage('success', 'Zdjęcie dodane do galerii.');
+    if (aboutGalleryImageInput) {
+      aboutGalleryImageInput.value = '';
+    }
+  } catch (err) {
+    console.error('Błąd dodawania zdjęcia do galerii:', err);
+    const message = err && err.message ? err.message : 'Nie udało się dodać zdjęcia.';
+    showAboutGalleryMessage('error', message);
+  }
+}
+
+function handleAboutGalleryListClick(event) {
+  const button = event.target instanceof HTMLElement
+    ? event.target.closest('[data-role="remove-gallery-image"]')
+    : null;
+  if (!button) {
+    return;
+  }
+  const imageId = button.dataset.imageId;
+  if (!imageId) {
+    return;
+  }
+  deleteAboutGalleryImage(imageId);
+}
+
+async function deleteAboutGalleryImage(imageId) {
+  showAboutGalleryMessage(null, 'Usuwam zdjęcie z galerii...');
+
+  try {
+    const res = await fetch(`/api/about/gallery/${encodeURIComponent(imageId)}`, {
+      method: 'DELETE'
+    });
+
+    if (!res.ok) {
+      const errorPayload = await res.json().catch(() => ({}));
+      const message = errorPayload && errorPayload.error ? errorPayload.error : 'Nie udało się usunąć zdjęcia.';
+      throw new Error(message);
+    }
+
+    const data = await res.json();
+    renderAboutGallery(data && Array.isArray(data.gallery) ? data.gallery : []);
+    showAboutGalleryMessage('success', 'Zdjęcie usunięte z galerii.');
+  } catch (err) {
+    console.error('Błąd usuwania zdjęcia z galerii:', err);
+    const message = err && err.message ? err.message : 'Nie udało się usunąć zdjęcia.';
+    showAboutGalleryMessage('error', message);
+  }
 }

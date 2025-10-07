@@ -373,6 +373,17 @@ body.page-intro-active:not(.page-intro-ready) .order-hero {
   transform: translateY(-2px);
 }
 
+body.modal-open {
+  overflow: hidden;
+}
+
+body.modal-open.page-transition-ready,
+body.modal-open.page-transition-ready.page-transition-enter,
+body.modal-open.page-transition-ready.page-transition-leave {
+  transform: none;
+  transition: none;
+}
+
 @media (max-width: 700px) {
   .modal-product {
     flex-direction: column;

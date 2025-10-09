@@ -1,256 +1,393 @@
 const aboutHero = document.getElementById('aboutHero');
 const aboutDescription = document.getElementById('aboutDescription');
-const aboutGallery = document.getElementById('aboutGallery');
-const aboutGalleryModal = document.getElementById('aboutGalleryModal');
-const aboutGalleryModalGrid = document.getElementById('aboutGalleryModalGrid');
-const aboutGalleryModalClose = aboutGalleryModal ? aboutGalleryModal.querySelector('.about-gallery-modal__close') : null;
+const galleryPreview = document.getElementById('aboutGalleryPreview');
+const galleryModal = document.getElementById('aboutGalleryModal');
+const galleryModalGrid = galleryModal ? galleryModal.querySelector('#aboutGalleryModalGrid') : null;
+const galleryModalClose = galleryModal ? galleryModal.querySelector('.about-gallery-modal__close') : null;
+const zoom = document.getElementById('aboutGalleryZoom');
+const zoomImage = zoom ? zoom.querySelector('.about-gallery-zoom__image') : null;
+const zoomClose = zoom ? zoom.querySelector('.about-gallery-zoom__close') : null;
+
 const DEFAULT_ABOUT_TEXT = 'Chachor Piecze to niewielki zespół piekarzy i cukierników, którzy robią codzienne wypieki w rytmie miasta.';
-const INITIAL_PREVIEW_COUNT = 1;
-const PREVIEW_COUNT_AFTER_LOAD = 7;
-let aboutGalleryData = [];
-let aboutGalleryTotal = 0;
-let aboutGalleryLoadedAll = false;
-let aboutGalleryLoading = false;
+const GALLERY_PREVIEW_LIMIT = 3;
 
-function applyAboutContent(content) {
-  updateGalleryState(content);
-  renderAboutGallery();
-  renderAboutGalleryModal();
+let galleryData = [];
+let lastPreviewTrigger = null;
+let lastModalTrigger = null;
+let activeGalleryIndex = -1;
 
-  if (!aboutHero || !aboutDescription) {
+function toggleModal(modal, isOpen, bodyClass, clearMediaOnClose = false) {
+  if (!modal) {
     return;
   }
 
-  const text = content && typeof content.heroText === 'string' && content.heroText.trim()
-    ? content.heroText.trim()
-    : DEFAULT_ABOUT_TEXT;
-  aboutDescription.textContent = text;
+  const open = Boolean(isOpen);
+  modal.classList.toggle('open', open);
+  modal.setAttribute('aria-hidden', open ? 'false' : 'true');
 
-  const imageData = content && typeof content.heroImageData === 'string' ? content.heroImageData : '';
-  if (imageData) {
-    aboutHero.style.setProperty('--about-hero-image', `url("${imageData}")`);
-    aboutHero.classList.add('about-hero--with-image');
-  } else {
-    aboutHero.style.removeProperty('--about-hero-image');
-    aboutHero.classList.remove('about-hero--with-image');
+  if (bodyClass) {
+    document.body.classList.toggle(bodyClass, open);
+  }
+
+  if (!open && clearMediaOnClose) {
+    const media = modal.querySelectorAll('img');
+    media.forEach((img) => {
+      img.classList.remove('is-active');
+      img.removeAttribute('src');
+      img.removeAttribute('alt');
+    });
   }
 }
 
-function renderAboutGallery() {
-  if (!aboutGallery) {
+function normalizeGallery(content) {
+  const gallery = Array.isArray(content && content.gallery) ? content.gallery : [];
+  return gallery
+    .map((item, index) => {
+      const data = item && typeof item.imageData === 'string' ? item.imageData.trim() : '';
+      if (!data) {
+        return null;
+      }
+      const caption = item && typeof item.caption === 'string' ? item.caption.trim() : '';
+      let created = 0;
+      if (item && item.createdAt) {
+        const parsed = new Date(item.createdAt).getTime();
+        if (Number.isFinite(parsed)) {
+          created = parsed;
+        }
+      }
+      return {
+        id: item && item._id ? String(item._id) : `gallery-${index}`,
+        imageData: data,
+        caption,
+        createdAt: created,
+        order: index
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => {
+      if (a.createdAt && b.createdAt) {
+        return b.createdAt - a.createdAt;
+      }
+      if (a.createdAt) {
+        return -1;
+      }
+      if (b.createdAt) {
+        return 1;
+      }
+      return b.order - a.order;
+    });
+}
+
+function applyAboutContent(content) {
+  const heroText = content && typeof content.heroText === 'string' && content.heroText.trim()
+    ? content.heroText.trim()
+    : DEFAULT_ABOUT_TEXT;
+
+  if (aboutDescription) {
+    aboutDescription.textContent = heroText;
+  }
+
+  const heroImage = content && typeof content.heroImageData === 'string' ? content.heroImageData : '';
+  if (aboutHero) {
+    if (heroImage) {
+      aboutHero.style.setProperty('--about-hero-image', `url("${heroImage}")`);
+      aboutHero.classList.add('about-hero--with-image');
+    } else {
+      aboutHero.style.removeProperty('--about-hero-image');
+      aboutHero.classList.remove('about-hero--with-image');
+    }
+  }
+
+  galleryData = normalizeGallery(content);
+  if (galleryData.length === 0) {
+    activeGalleryIndex = -1;
+  } else if (!Number.isFinite(activeGalleryIndex) || activeGalleryIndex < 0) {
+    activeGalleryIndex = -1;
+  } else if (activeGalleryIndex >= galleryData.length) {
+    activeGalleryIndex = galleryData.length - 1;
+  }
+  renderGalleryPreview();
+  renderGalleryModal();
+}
+
+function renderGallerySkeletons(count = GALLERY_PREVIEW_LIMIT) {
+  if (!galleryPreview) {
+    return;
+  }
+  const total = Math.max(0, Math.min(Number(count) || 0, GALLERY_PREVIEW_LIMIT));
+  galleryPreview.innerHTML = '';
+  for (let i = 0; i < total; i += 1) {
+    const skeleton = document.createElement('div');
+    skeleton.classList.add('about-gallery__item', 'about-gallery__item--skeleton');
+    galleryPreview.appendChild(skeleton);
+  }
+}
+
+function renderGalleryPreview() {
+  if (!galleryPreview) {
     return;
   }
 
-  aboutGallery.innerHTML = '';
+  galleryPreview.innerHTML = '';
 
-  if (!aboutGalleryData.length) {
+  if (!galleryData.length) {
     const empty = document.createElement('p');
     empty.classList.add('about-gallery__empty');
     empty.textContent = 'Galeria w przygotowaniu.';
-    aboutGallery.appendChild(empty);
+    galleryPreview.appendChild(empty);
+    return;
+  }
+
+  const previewCount = Math.min(galleryData.length, GALLERY_PREVIEW_LIMIT);
+  for (let i = 0; i < previewCount; i += 1) {
+    galleryPreview.appendChild(buildPreviewButton(galleryData[i], i));
+  }
+
+  setActivePreview(activeGalleryIndex);
+}
+
+function renderGalleryModal() {
+  if (!galleryModalGrid) {
+    return;
+  }
+
+  galleryModalGrid.innerHTML = '';
+
+  if (!galleryData.length) {
+    galleryModalGrid.appendChild(buildModalMessage('Galeria w przygotowaniu.'));
     return;
   }
 
   const fragment = document.createDocumentFragment();
-  const previewLimit = aboutGalleryLoadedAll
-    ? Math.min(PREVIEW_COUNT_AFTER_LOAD, aboutGalleryData.length)
-    : Math.min(INITIAL_PREVIEW_COUNT, aboutGalleryData.length);
-  const previewItems = aboutGalleryData.slice(0, previewLimit);
-
-  previewItems.forEach((item, index) => {
-    const figure = document.createElement('figure');
-    figure.classList.add('about-gallery__item');
-
-    const image = document.createElement('img');
-    image.src = item.imageData;
-    image.alt = `Galeria Chachor Piecze zdjęcie ${index + 1}`;
-    figure.appendChild(image);
-
-    fragment.appendChild(figure);
+  galleryData.forEach((item, index) => {
+    fragment.appendChild(buildModalButton(item, index));
   });
+  galleryModalGrid.appendChild(fragment);
 
-  const totalForPreview = aboutGalleryLoadedAll ? aboutGalleryData.length : aboutGalleryTotal;
-  const remainingCount = aboutGalleryLoadedAll
-    ? Math.max(aboutGalleryData.length - previewItems.length, 0)
-    : Math.max(aboutGalleryTotal - previewItems.length, 0);
-
-  if (!aboutGalleryLoadedAll) {
-    const baseSkeletonLimit = Math.max(PREVIEW_COUNT_AFTER_LOAD - previewItems.length, 2);
-    const skeletonCount = aboutGalleryLoading
-      ? Math.min(Math.max(remainingCount, baseSkeletonLimit), 6)
-      : Math.min(Math.max(remainingCount, 0), Math.min(baseSkeletonLimit, 3));
-    appendGallerySkeletons(fragment, skeletonCount, 'about-gallery__item');
-  }
-
-  if (!aboutGalleryLoadedAll && !aboutGalleryLoading && totalForPreview > previewItems.length && remainingCount > 0) {
-    const moreTile = document.createElement('button');
-    moreTile.type = 'button';
-    moreTile.classList.add('about-gallery__item', 'about-gallery__more');
-    moreTile.dataset.role = 'gallery-see-more';
-    moreTile.setAttribute('aria-label', 'Zobacz więcej zdjęć');
-    moreTile.innerHTML = `
-      <span class="about-gallery__more-label">Zobacz więcej</span>
-      <span class="about-gallery__more-count">(+${remainingCount})</span>
-    `;
-    fragment.appendChild(moreTile);
-  }
-
-  aboutGallery.appendChild(fragment);
+  setActiveModal(activeGalleryIndex);
 }
 
-function renderAboutGalleryModal() {
-  if (!aboutGalleryModalGrid) {
+function renderGalleryError() {
+  if (galleryPreview) {
+    galleryPreview.innerHTML = '';
+    const error = document.createElement('p');
+    error.classList.add('about-gallery__empty');
+    error.textContent = 'Nie udało się załadować galerii.';
+    galleryPreview.appendChild(error);
+  }
+  if (galleryModalGrid) {
+    galleryModalGrid.innerHTML = '';
+    galleryModalGrid.appendChild(buildModalMessage('Nie udało się załadować galerii.'));
+  }
+  activeGalleryIndex = -1;
+  setActivePreview(activeGalleryIndex);
+  setActiveModal(activeGalleryIndex);
+}
+
+function buildPreviewButton(item, index) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.classList.add('about-gallery__item');
+  button.dataset.role = 'about-gallery-item';
+  button.dataset.galleryIndex = String(index);
+  button.style.setProperty('--gallery-index', index);
+
+  if (index === activeGalleryIndex) {
+    button.classList.add('is-active');
+    button.setAttribute('aria-current', 'true');
+  }
+
+  const labelText = item.caption || `Zdjęcie ${index + 1} z galerii Chachor Piecze`;
+  button.setAttribute('aria-label', `Otwórz galerię – ${labelText}`);
+
+  const img = document.createElement('img');
+  img.src = item.imageData;
+  img.alt = labelText;
+  button.appendChild(img);
+
+  return button;
+}
+
+function buildModalButton(item, index) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.classList.add('about-gallery-modal__item');
+  button.dataset.role = 'about-gallery-modal-item';
+  button.dataset.galleryIndex = String(index);
+  button.style.setProperty('--gallery-index', index);
+
+  if (index === activeGalleryIndex) {
+    button.classList.add('is-active');
+    button.setAttribute('aria-current', 'true');
+  }
+
+  const caption = item.caption || `Zdjęcie ${index + 1} z galerii Chachor Piecze`;
+  button.setAttribute('aria-label', `Powiększ zdjęcie: ${caption}`);
+
+  const img = document.createElement('img');
+  img.src = item.imageData;
+  img.alt = caption;
+  button.appendChild(img);
+
+  return button;
+}
+
+function buildModalMessage(text) {
+  const message = document.createElement('p');
+  message.classList.add('about-gallery-modal__empty');
+  message.textContent = text;
+  return message;
+}
+
+function setActivePreview(index) {
+  if (!galleryPreview) {
     return;
   }
-  aboutGalleryModalGrid.innerHTML = '';
-  const list = aboutGalleryData;
-  if (!list.length) {
-    const empty = document.createElement('p');
-    empty.classList.add('about-gallery-modal__empty');
-    empty.textContent = 'Galeria w przygotowaniu.';
-    aboutGalleryModalGrid.appendChild(empty);
-    return;
-  }
 
-  const fragment = document.createDocumentFragment();
-  list.forEach((item, index) => {
-    const figure = document.createElement('figure');
-    figure.classList.add('about-gallery-modal__item');
-    const image = document.createElement('img');
-    image.src = item.imageData;
-    image.alt = `Zdjęcie ${index + 1} z pełnej galerii`;
-    figure.appendChild(image);
-    fragment.appendChild(figure);
-  });
-
-  if (!aboutGalleryLoadedAll) {
-    appendGallerySkeletons(fragment, 4, 'about-gallery-modal__item');
-  }
-
-  aboutGalleryModalGrid.appendChild(fragment);
-}
-
-function updateGalleryState(content) {
-  const items = buildGalleryItems(content);
-  aboutGalleryData = items;
-  const hasGalleryCount = content && typeof content.galleryCount === 'number';
-  aboutGalleryTotal = hasGalleryCount ? content.galleryCount : items.length;
-  const receivedGallery = content && Array.isArray(content.gallery) ? content.gallery : [];
-  aboutGalleryLoadedAll = receivedGallery.length >= aboutGalleryTotal || aboutGalleryTotal <= items.length;
-}
-
-function buildGalleryItems(content) {
-  const gallery = content && Array.isArray(content.gallery)
-    ? content.gallery.filter((item) => item && item.imageData)
-    : [];
-
-  const list = gallery.slice();
-  const heroImage = content && content.heroImageData ? content.heroImageData : '';
-
-  if (heroImage) {
-    const existingIndex = list.findIndex((item) => item && item.imageData === heroImage);
-    if (existingIndex > 0) {
-      const [heroItem] = list.splice(existingIndex, 1);
-      list.unshift(heroItem);
-    } else if (existingIndex === -1) {
-      list.unshift({ _id: null, imageData: heroImage });
+  const items = galleryPreview.querySelectorAll('[data-role="about-gallery-item"]');
+  items.forEach((node) => {
+    const isMatch = Number(node.getAttribute('data-gallery-index')) === index;
+    node.classList.toggle('is-active', isMatch);
+    if (isMatch) {
+      node.setAttribute('aria-current', 'true');
+    } else {
+      node.removeAttribute('aria-current');
     }
-  }
-
-  return list;
+  });
 }
 
-function openAboutGalleryModal() {
-  if (!aboutGalleryModal) {
-    return;
-  }
-  aboutGalleryModal.classList.add('open');
-  aboutGalleryModal.setAttribute('aria-hidden', 'false');
-  document.body.classList.add('about-gallery-modal-open');
-}
-
-function closeAboutGalleryModal() {
-  if (!aboutGalleryModal) {
-    return;
-  }
-  aboutGalleryModal.classList.remove('open');
-  aboutGalleryModal.setAttribute('aria-hidden', 'true');
-  document.body.classList.remove('about-gallery-modal-open');
-}
-
-async function handleGallerySeeMoreClick() {
-  if (aboutGalleryLoading) {
+function setActiveModal(index) {
+  if (!galleryModalGrid) {
     return;
   }
 
-  let fetchFailed = false;
+  const items = galleryModalGrid.querySelectorAll('[data-role="about-gallery-modal-item"]');
+  items.forEach((node) => {
+    const isMatch = Number(node.getAttribute('data-gallery-index')) === index;
+    node.classList.toggle('is-active', isMatch);
+    if (isMatch) {
+      node.setAttribute('aria-current', 'true');
+    } else {
+      node.removeAttribute('aria-current');
+    }
+  });
+}
 
-  if (!aboutGalleryLoadedAll) {
-    try {
-      aboutGalleryLoading = true;
-      renderAboutGallery();
-      const res = await fetch('/api/about?includeGallery=1');
-      if (!res.ok) {
-        throw new Error('Nie udało się załadować galerii');
+function updateActiveIndex(index) {
+  if (!Number.isFinite(index) || !galleryData[index]) {
+    return;
+  }
+  activeGalleryIndex = index;
+  setActivePreview(activeGalleryIndex);
+  setActiveModal(activeGalleryIndex);
+}
+
+function openGalleryModal(trigger, initialIndex) {
+  if (!galleryModal) {
+    return;
+  }
+
+  lastPreviewTrigger = trigger || null;
+
+  if (Number.isFinite(initialIndex) && galleryData[initialIndex]) {
+    updateActiveIndex(initialIndex);
+  } else if (Number.isFinite(activeGalleryIndex) && galleryData[activeGalleryIndex]) {
+    setActivePreview(activeGalleryIndex);
+    setActiveModal(activeGalleryIndex);
+  }
+
+  toggleModal(galleryModal, true, 'about-gallery-modal-open');
+
+  if (galleryModalClose) {
+    galleryModalClose.focus();
+  }
+
+  if (Number.isFinite(initialIndex)) {
+    requestAnimationFrame(() => {
+      const target = galleryModalGrid
+        ? galleryModalGrid.querySelector(`[data-gallery-index="${initialIndex}"]`)
+        : null;
+      if (target && typeof target.scrollIntoView === 'function') {
+        target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        target.focus({ preventScroll: true });
       }
-      const data = await res.json();
-      updateGalleryState(data);
-      renderAboutGallery();
-      renderAboutGalleryModal();
-    } catch (err) {
-      console.error('Błąd ładowania pełnej galerii:', err);
-      fetchFailed = true;
-    } finally {
-      aboutGalleryLoading = false;
-    }
+    });
   }
+}
 
-  if (fetchFailed || !aboutGalleryData.length) {
-    renderAboutGallery();
+function closeGalleryModal() {
+  if (!galleryModal) {
     return;
   }
 
-  renderAboutGalleryModal();
-  openAboutGalleryModal();
+  if (zoom && zoom.classList.contains('open')) {
+    lastModalTrigger = null;
+    closeZoom();
+  }
 
-  if (!aboutGalleryLoadedAll) {
-    renderAboutGallery();
+  toggleModal(galleryModal, false, 'about-gallery-modal-open');
+  if (galleryModalGrid) {
+    galleryModalGrid.scrollTop = 0;
+  }
+
+  if (lastPreviewTrigger) {
+    lastPreviewTrigger.focus();
+    lastPreviewTrigger = null;
   }
 }
 
-if (aboutGallery) {
-  aboutGallery.addEventListener('click', (event) => {
-    const button = event.target instanceof HTMLElement
-      ? event.target.closest('[data-role="gallery-see-more"]')
-      : null;
-    if (!button) {
-      return;
-    }
-    handleGallerySeeMoreClick();
-  });
-}
-
-if (aboutGalleryModal) {
-  aboutGalleryModal.addEventListener('click', (event) => {
-    if (event.target === aboutGalleryModal) {
-      closeAboutGalleryModal();
-    }
-  });
-}
-
-if (aboutGalleryModalClose) {
-  aboutGalleryModalClose.addEventListener('click', closeAboutGalleryModal);
-}
-
-window.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && aboutGalleryModal && aboutGalleryModal.classList.contains('open')) {
-    closeAboutGalleryModal();
+function openZoomByIndex(index) {
+  if (!zoom || !zoomImage) {
+    return;
   }
-});
+
+  if (!Number.isFinite(index) || !galleryData[index]) {
+    return;
+  }
+
+  updateActiveIndex(index);
+
+  const item = galleryData[index];
+  const caption = item.caption || `Zdjęcie ${index + 1} z galerii Chachor Piecze`;
+
+  zoomImage.src = item.imageData;
+  zoomImage.alt = caption;
+  zoomImage.dataset.galleryIndex = String(index);
+  zoomImage.classList.add('is-active');
+
+  toggleModal(zoom, true, 'about-gallery-zoom-open');
+
+  if (zoomClose) {
+    zoomClose.focus();
+  }
+}
+
+function closeZoom() {
+  if (!zoom) {
+    return;
+  }
+
+  const wasOpen = zoom.classList.contains('open');
+  toggleModal(zoom, false, 'about-gallery-zoom-open', true);
+
+  if (zoomImage) {
+    delete zoomImage.dataset.galleryIndex;
+    zoomImage.classList.remove('is-active');
+  }
+
+  if (wasOpen && galleryModal && galleryModal.classList.contains('open') && lastModalTrigger) {
+    lastModalTrigger.focus();
+  }
+  lastModalTrigger = null;
+}
 
 async function loadAboutContent() {
+  if (galleryPreview) {
+    renderGallerySkeletons();
+  }
+
   try {
-    const res = await fetch('/api/about?includeGallery=0');
+    const res = await fetch('/api/about');
     if (!res.ok) {
       throw new Error('Request failed');
     }
@@ -259,17 +396,77 @@ async function loadAboutContent() {
   } catch (err) {
     console.error('Błąd pobierania sekcji O nas:', err);
     applyAboutContent(null);
+    renderGalleryError();
   }
 }
 
-function appendGallerySkeletons(target, count, baseClass = 'about-gallery__item') {
-  const total = Number(count) || 0;
-  const clamped = Math.max(Math.min(total, 6), 0);
-  for (let i = 0; i < clamped; i += 1) {
-    const skeleton = document.createElement('div');
-    skeleton.classList.add(baseClass, `${baseClass}--skeleton`);
-    target.appendChild(skeleton);
-  }
+if (galleryPreview) {
+  galleryPreview.addEventListener('click', (event) => {
+    const trigger = event.target instanceof HTMLElement
+      ? event.target.closest('[data-role="about-gallery-item"]')
+      : null;
+
+    if (!trigger) {
+      return;
+    }
+
+    const indexAttr = trigger.getAttribute('data-gallery-index');
+    const galleryIndex = Number(indexAttr);
+    openGalleryModal(trigger, galleryIndex);
+  });
 }
+
+if (galleryModalGrid) {
+  galleryModalGrid.addEventListener('click', (event) => {
+    const trigger = event.target instanceof HTMLElement
+      ? event.target.closest('[data-role="about-gallery-modal-item"]')
+      : null;
+
+    if (!trigger) {
+      return;
+    }
+
+    const indexAttr = trigger.getAttribute('data-gallery-index');
+    const galleryIndex = Number(indexAttr);
+    lastModalTrigger = trigger;
+    openZoomByIndex(galleryIndex);
+  });
+}
+
+if (galleryModal) {
+  galleryModal.addEventListener('click', (event) => {
+    if (event.target === galleryModal) {
+      closeGalleryModal();
+    }
+  });
+}
+
+if (galleryModalClose) {
+  galleryModalClose.addEventListener('click', closeGalleryModal);
+}
+
+if (zoom) {
+  zoom.addEventListener('click', (event) => {
+    if (event.target === zoom) {
+      closeZoom();
+    }
+  });
+}
+
+if (zoomClose) {
+  zoomClose.addEventListener('click', closeZoom);
+}
+
+window.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape') {
+    return;
+  }
+
+  if (zoom && zoom.classList.contains('open')) {
+    closeZoom();
+  } else if (galleryModal && galleryModal.classList.contains('open')) {
+    closeGalleryModal();
+  }
+});
 
 loadAboutContent();

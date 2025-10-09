@@ -39,13 +39,35 @@
     <section class="about-gallery glass-panel">
       <h2>Galeria piekarni</h2>
       <p>Zajrzyj za kulisy naszych wypieków i zobacz, co dzieje się w piekarni.</p>
-      <div id="aboutGallery" class="about-gallery__grid" aria-live="polite"></div>
+      <div id="aboutGalleryPreview" class="about-gallery__grid" aria-live="polite"></div>
     </section>
-    <div id="aboutGalleryModal" class="about-gallery-modal" aria-hidden="true" role="dialog" aria-modal="true">
+
+    <div
+      id="aboutGalleryModal"
+      class="about-gallery-modal"
+      aria-hidden="true"
+      role="dialog"
+      aria-modal="true"
+    >
       <div class="about-gallery-modal__content" role="document">
         <button type="button" class="about-gallery-modal__close" aria-label="Zamknij galerię">×</button>
-        <h2>Pełna galeria</h2>
+        <h2 class="about-gallery-modal__title">Galeria piekarni</h2>
         <div id="aboutGalleryModalGrid" class="about-gallery-modal__grid"></div>
+      </div>
+    </div>
+
+    <div
+      id="aboutGalleryZoom"
+      class="about-gallery-zoom"
+      aria-hidden="true"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div class="about-gallery-zoom__content" role="document">
+        <button type="button" class="about-gallery-zoom__close" aria-label="Zamknij powiększenie">×</button>
+        <figure class="about-gallery-zoom__figure">
+          <img class="about-gallery-zoom__image" src="" alt="">
+        </figure>
       </div>
     </div>
 

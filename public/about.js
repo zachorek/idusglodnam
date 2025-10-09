@@ -15,6 +15,10 @@ let galleryData = [];
 let lastPreviewTrigger = null;
 let lastModalTrigger = null;
 let activeGalleryIndex = -1;
+let modalRendered = false;
+let previewRemainderHandle = null;
+let previewRemainderScheduled = false;
+let previewRemainderUsesIdle = false;
 
 function toggleModal(modal, isOpen, bodyClass, clearMediaOnClose = false) {
   if (!modal) {
@@ -36,6 +40,74 @@ function toggleModal(modal, isOpen, bodyClass, clearMediaOnClose = false) {
       img.removeAttribute('src');
       img.removeAttribute('alt');
     });
+  }
+}
+
+function cancelScheduledPreviewRemainder() {
+  if (!previewRemainderScheduled || previewRemainderHandle === null) {
+    return;
+  }
+
+  if (previewRemainderUsesIdle && typeof window !== 'undefined' && typeof window.cancelIdleCallback === 'function') {
+    window.cancelIdleCallback(previewRemainderHandle);
+  } else {
+    clearTimeout(previewRemainderHandle);
+  }
+
+  previewRemainderHandle = null;
+  previewRemainderScheduled = false;
+  previewRemainderUsesIdle = false;
+}
+
+function schedulePreviewRemainder(previewLimit) {
+  if (previewRemainderScheduled || !galleryPreview) {
+    return;
+  }
+
+  const renderRemaining = () => {
+    previewRemainderHandle = null;
+    previewRemainderScheduled = false;
+    previewRemainderUsesIdle = false;
+
+    if (!galleryPreview) {
+      return;
+    }
+
+    const existing = new Set(
+      Array.from(galleryPreview.querySelectorAll('[data-role="about-gallery-item"]'))
+        .map((node) => Number(node.getAttribute('data-gallery-index')))
+    );
+
+    const fragment = document.createDocumentFragment();
+    const limit = Math.min(previewLimit, galleryData.length);
+    for (let i = 1; i < limit; i += 1) {
+      if (existing.has(i)) {
+        continue;
+      }
+      const skeleton = galleryPreview.querySelector(`[data-role="about-gallery-item-skeleton"][data-gallery-index="${i}"]`);
+      if (skeleton) {
+        skeleton.remove();
+      }
+      fragment.appendChild(buildPreviewButton(galleryData[i], i));
+    }
+
+    if (fragment.childNodes.length) {
+      galleryPreview.appendChild(fragment);
+    }
+
+    if (activeGalleryIndex >= 0) {
+      setActivePreview(activeGalleryIndex);
+    }
+  };
+
+  previewRemainderScheduled = true;
+
+  if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+    previewRemainderUsesIdle = true;
+    previewRemainderHandle = window.requestIdleCallback(renderRemaining, { timeout: 500 });
+  } else {
+    previewRemainderUsesIdle = false;
+    previewRemainderHandle = setTimeout(renderRemaining, 0);
   }
 }
 
@@ -106,14 +178,21 @@ function applyAboutContent(content) {
   } else if (activeGalleryIndex >= galleryData.length) {
     activeGalleryIndex = galleryData.length - 1;
   }
+
+  cancelScheduledPreviewRemainder();
+  modalRendered = false;
+  if (galleryModalGrid) {
+    galleryModalGrid.innerHTML = '';
+  }
+
   renderGalleryPreview();
-  renderGalleryModal();
 }
 
 function renderGallerySkeletons(count = GALLERY_PREVIEW_LIMIT) {
   if (!galleryPreview) {
     return;
   }
+  cancelScheduledPreviewRemainder();
   const total = Math.max(0, Math.min(Number(count) || 0, GALLERY_PREVIEW_LIMIT));
   galleryPreview.innerHTML = '';
   for (let i = 0; i < total; i += 1) {
@@ -128,6 +207,7 @@ function renderGalleryPreview() {
     return;
   }
 
+  cancelScheduledPreviewRemainder();
   galleryPreview.innerHTML = '';
 
   if (!galleryData.length) {
@@ -139,11 +219,25 @@ function renderGalleryPreview() {
   }
 
   const previewCount = Math.min(galleryData.length, GALLERY_PREVIEW_LIMIT);
-  for (let i = 0; i < previewCount; i += 1) {
-    galleryPreview.appendChild(buildPreviewButton(galleryData[i], i));
+  const firstButton = buildPreviewButton(galleryData[0], 0);
+  galleryPreview.appendChild(firstButton);
+
+  if (previewCount > 1) {
+    for (let i = 1; i < previewCount; i += 1) {
+      const skeleton = document.createElement('div');
+      skeleton.classList.add('about-gallery__item', 'about-gallery__item--skeleton');
+      skeleton.dataset.galleryIndex = String(i);
+      skeleton.dataset.role = 'about-gallery-item-skeleton';
+      galleryPreview.appendChild(skeleton);
+    }
+    schedulePreviewRemainder(previewCount);
   }
 
-  setActivePreview(activeGalleryIndex);
+  if (activeGalleryIndex === 0) {
+    setActivePreview(activeGalleryIndex);
+  } else if (activeGalleryIndex < 0) {
+    setActivePreview(-1);
+  }
 }
 
 function renderGalleryModal() {
@@ -151,6 +245,7 @@ function renderGalleryModal() {
     return;
   }
 
+  modalRendered = true;
   galleryModalGrid.innerHTML = '';
 
   if (!galleryData.length) {
@@ -179,6 +274,8 @@ function renderGalleryError() {
     galleryModalGrid.innerHTML = '';
     galleryModalGrid.appendChild(buildModalMessage('Nie udało się załadować galerii.'));
   }
+  cancelScheduledPreviewRemainder();
+  modalRendered = false;
   activeGalleryIndex = -1;
   setActivePreview(activeGalleryIndex);
   setActiveModal(activeGalleryIndex);
@@ -203,6 +300,16 @@ function buildPreviewButton(item, index) {
   const img = document.createElement('img');
   img.src = item.imageData;
   img.alt = labelText;
+  img.decoding = 'async';
+
+  if (index === 0) {
+    img.loading = 'eager';
+    img.fetchPriority = 'high';
+  } else {
+    img.loading = 'lazy';
+    img.fetchPriority = 'low';
+  }
+
   button.appendChild(img);
 
   return button;
@@ -227,6 +334,9 @@ function buildModalButton(item, index) {
   const img = document.createElement('img');
   img.src = item.imageData;
   img.alt = caption;
+  img.loading = 'lazy';
+  img.decoding = 'async';
+  img.fetchPriority = 'low';
   button.appendChild(img);
 
   return button;
@@ -289,9 +399,13 @@ function openGalleryModal(trigger, initialIndex) {
 
   lastPreviewTrigger = trigger || null;
 
+  if (!modalRendered) {
+    renderGalleryModal();
+  }
+
   if (Number.isFinite(initialIndex) && galleryData[initialIndex]) {
     updateActiveIndex(initialIndex);
-  } else if (Number.isFinite(activeGalleryIndex) && galleryData[activeGalleryIndex]) {
+  } else if (activeGalleryIndex >= 0 && galleryData[activeGalleryIndex]) {
     setActivePreview(activeGalleryIndex);
     setActiveModal(activeGalleryIndex);
   }
@@ -302,10 +416,14 @@ function openGalleryModal(trigger, initialIndex) {
     galleryModalClose.focus();
   }
 
-  if (Number.isFinite(initialIndex)) {
+  const targetIndex = Number.isFinite(initialIndex) && galleryData[initialIndex]
+    ? initialIndex
+    : (activeGalleryIndex >= 0 ? activeGalleryIndex : null);
+
+  if (targetIndex !== null) {
     requestAnimationFrame(() => {
       const target = galleryModalGrid
-        ? galleryModalGrid.querySelector(`[data-gallery-index="${initialIndex}"]`)
+        ? galleryModalGrid.querySelector(`[data-gallery-index="${targetIndex}"]`)
         : null;
       if (target && typeof target.scrollIntoView === 'function') {
         target.scrollIntoView({ block: 'center', behavior: 'smooth' });

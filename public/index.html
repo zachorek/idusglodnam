@@ -29,10 +29,18 @@
   <img src="images/logo.png" alt="Chachor logo" class="logo">
 
   <main class="order-layout">
-    <section id="menu" class="order-menu glass-panel">
+        <section id="menu" class="order-menu glass-panel">
       <header class="order-menu-header">
         <h2>Menu wypieków</h2>
       </header>
+      <div class="order-date-bar" aria-label="Wybierz datę odbioru">
+        <p class="order-date-bar__text">Sprawdź dostępność produktów w wybranym dniu w miesiącu.</p>
+        <div class="order-date-bar__field">
+          <input type="date" id="menuPickupDate" name="menuPickupDate" aria-describedby="menuPickupHint">
+          <button type="button" id="menuPickupDateClear" class="order-date-bar__clear">Wyczyść</button>
+        </div>
+      </div>
+      </div>
       <div class="same-day-note" role="status" aria-live="polite">
         <p class="same-day-note__lead">Wygodnie zamów pieczywo na każdy dzień tygodnia i odbierz je u Chachora!</p>
       </div>
@@ -125,6 +133,20 @@
     (function updateFooterYears() {
       document.querySelectorAll('.siteFooterYear').forEach((node) => {
         node.textContent = new Date().getFullYear();
+      });
+    })();
+    (function setupMenuPickupDate() {
+      const dateInput = document.getElementById('menuPickupDate');
+      const clearButton = document.getElementById('menuPickupDateClear');
+      if (!dateInput || !clearButton) {
+        return;
+      }
+      const today = new Date();
+      today.setDate(today.getDate() + 1);
+      const minValue = today.toISOString().split('T')[0];
+      dateInput.min = minValue;
+      clearButton.addEventListener('click', () => {
+        dateInput.value = '';
       });
     })();
   </script>

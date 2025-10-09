@@ -667,6 +667,15 @@ body.modal-open.page-transition-ready.page-transition-leave {
   text-align: left;
 }
 
+.about-gallery {
+  text-align: center;
+  align-items: center;
+}
+
+.about-gallery__grid {
+  width: 100%;
+}
+
 .about-gallery > p,
 .pickup-gallery > p {
   margin: 0;

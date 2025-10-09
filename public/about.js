@@ -7,9 +7,11 @@ const galleryModalClose = galleryModal ? galleryModal.querySelector('.about-gall
 const zoom = document.getElementById('aboutGalleryZoom');
 const zoomImage = zoom ? zoom.querySelector('.about-gallery-zoom__image') : null;
 const zoomClose = zoom ? zoom.querySelector('.about-gallery-zoom__close') : null;
+const socialFeed = document.getElementById('aboutSocialFeed');
 
 const DEFAULT_ABOUT_TEXT = 'Chachor Piecze to niewielki zespół piekarzy i cukierników, którzy robią codzienne wypieki w rytmie miasta.';
 const GALLERY_PREVIEW_LIMIT = 3;
+const SOCIAL_FEED_LIMIT = 3;
 
 let galleryData = [];
 let lastPreviewTrigger = null;
@@ -215,6 +217,7 @@ function renderGalleryPreview() {
     empty.classList.add('about-gallery__empty');
     empty.textContent = 'Galeria w przygotowaniu.';
     galleryPreview.appendChild(empty);
+    ensureSocialFeedLoaded();
     return;
   }
 
@@ -238,6 +241,8 @@ function renderGalleryPreview() {
   } else if (activeGalleryIndex < 0) {
     setActivePreview(-1);
   }
+
+  ensureSocialFeedLoaded();
 }
 
 function renderGalleryModal() {
@@ -279,6 +284,7 @@ function renderGalleryError() {
   activeGalleryIndex = -1;
   setActivePreview(activeGalleryIndex);
   setActiveModal(activeGalleryIndex);
+  ensureSocialFeedLoaded();
 }
 
 function buildPreviewButton(item, index) {
@@ -347,6 +353,100 @@ function buildModalMessage(text) {
   message.classList.add('about-gallery-modal__empty');
   message.textContent = text;
   return message;
+}
+
+function renderSocialFeedSkeleton(count = SOCIAL_FEED_LIMIT) {
+  if (!socialFeed) {
+    return;
+  }
+  const total = Math.max(0, Math.min(Number(count) || 0, SOCIAL_FEED_LIMIT));
+  socialFeed.innerHTML = '';
+  for (let i = 0; i < total; i += 1) {
+    const skeleton = document.createElement('div');
+    skeleton.classList.add('about-social-feed__item', 'about-social-feed__item--skeleton');
+    skeleton.setAttribute('aria-hidden', 'true');
+    socialFeed.appendChild(skeleton);
+  }
+}
+
+function renderSocialFeed() {
+  if (!socialFeed) {
+    return;
+  }
+
+  if (socialFeedLoading) {
+    renderSocialFeedSkeleton();
+    return;
+  }
+
+  socialFeed.innerHTML = '';
+
+  if (!socialFeedData.length) {
+    const empty = document.createElement('p');
+    empty.classList.add('about-gallery__empty');
+    empty.textContent = 'Brak zdjęć do wyświetlenia.';
+    socialFeed.appendChild(empty);
+    return;
+  }
+
+  socialFeedData.forEach((item, index) => {
+    const link = document.createElement('a');
+    link.classList.add('about-social-feed__item');
+    link.href = item && item.permalink ? item.permalink : 'https://www.instagram.com/chachor_piecze/';
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+
+    const img = document.createElement('img');
+    img.src = item && item.media_url ? item.media_url : '';
+    img.alt = item && item.caption ? item.caption : `Instagram Chachor Piecze zdjęcie ${index + 1}`;
+    img.loading = index === 0 ? 'eager' : 'lazy';
+    img.decoding = 'async';
+
+    link.appendChild(img);
+    socialFeed.appendChild(link);
+  });
+}
+
+async function loadSocialFeed() {
+  if (!socialFeed || socialFeedLoaded || socialFeedLoading) {
+    return;
+  }
+
+  try {
+    socialFeedLoading = true;
+    renderSocialFeedSkeleton();
+    const res = await fetch('/api/instagram-feed');
+    if (!res.ok) {
+      throw new Error('Request failed');
+    }
+    const data = await res.json();
+    socialFeedData = Array.isArray(data)
+      ? data.filter((item) => item && item.media_url).slice(0, SOCIAL_FEED_LIMIT)
+      : [];
+    socialFeedLoaded = true;
+  } catch (err) {
+    console.error('Błąd pobierania feedu social:', err);
+    socialFeedData = [];
+    socialFeedLoaded = true;
+  } finally {
+    socialFeedLoading = false;
+    renderSocialFeed();
+  }
+}
+
+function ensureSocialFeedLoaded() {
+  if (!socialFeed) {
+    return;
+  }
+  if (socialFeedLoaded) {
+    renderSocialFeed();
+    return;
+  }
+  if (socialFeedLoading) {
+    renderSocialFeedSkeleton();
+    return;
+  }
+  loadSocialFeed();
 }
 
 function setActivePreview(index) {
@@ -588,3 +688,4 @@ window.addEventListener('keydown', (event) => {
 });
 
 loadAboutContent();
+ensureSocialFeedLoaded();

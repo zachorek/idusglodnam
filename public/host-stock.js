@@ -11,7 +11,17 @@ let products = [];
 let currentDayIndex = 0;
 let currentDate = null;
 
-const DAYS_OF_WEEK = ['Poniedziałek', 'Wtorek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela'];
+const DAYS_OF_WEEK = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela'];
+
+function formatDateForApi(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    return '';
+  }
+  const year = date.getFullYear();
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const day = date.getDate().toString().padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 
 document.addEventListener('DOMContentLoaded', () => {
   loadProducts();
@@ -62,7 +72,7 @@ async function loadProducts() {
     const response = await fetch('/api/products');
     if (!response.ok) throw new Error('Błąd pobierania produktów');
     products = await response.json();
-    renderProductsStock(productsStock, products, currentDayIndex);
+    await loadDayStock(currentDayIndex);
     loadStockOverview();
   } catch (error) {
     console.error('Błąd ładowania produktów:', error);
@@ -75,7 +85,17 @@ function renderProductsStock(container, products, dayIndex) {
 
   container.innerHTML = '';
 
-  products.forEach(product => {
+  const shouldFilter = Number.isInteger(dayIndex);
+  const filteredProducts = shouldFilter
+    ? products.filter(product => isProductAvailableOnDay(product, dayIndex))
+    : products;
+
+  if (!filteredProducts.length) {
+    container.innerHTML = '<p class="stock-empty-note">Brak wypieków przypisanych do tego dnia.</p>';
+    return;
+  }
+
+  filteredProducts.forEach(product => {
     const productDiv = document.createElement('div');
     productDiv.className = 'product-stock-item';
     productDiv.innerHTML = `
@@ -97,8 +117,20 @@ function renderProductsStock(container, products, dayIndex) {
   });
 }
 
+function isProductAvailableOnDay(product, dayIndex) {
+  if (!Number.isInteger(dayIndex)) {
+    return true;
+  }
+  const raw = Array.isArray(product.availabilityDays) ? product.availabilityDays : [];
+  if (!raw.length) {
+    return true;
+  }
+  return raw.some((value) => Number(value) === dayIndex);
+}
+
 async function loadDayStock(dayIndex) {
   try {
+    renderProductsStock(productsStock, products, dayIndex);
     const response = await fetch(`/api/stock/${dayIndex}`);
     if (!response.ok) throw new Error('Błąd pobierania stanów');
     const stockData = await response.json();
@@ -107,7 +139,10 @@ async function loadDayStock(dayIndex) {
     stockData.forEach(item => {
       const input = document.querySelector(`#stock-${item.productId}`);
       if (input) {
-        input.value = item.remaining;
+        const value = typeof item.capacity === 'number'
+          ? item.capacity
+          : (typeof item.remaining === 'number' ? item.remaining : 0);
+        input.value = value;
       }
     });
 
@@ -122,8 +157,12 @@ async function loadDateStock(date) {
   if (!date) return;
 
   try {
+    const isoDate = formatDateForApi(date);
+    if (!isoDate) {
+      throw new Error('Nieprawidłowa data');
+    }
     const dayIndex = (date.getDay() + 6) % 7; // Convert to Monday=0 format
-    const response = await fetch(`/api/stock/${dayIndex}`);
+    const response = await fetch(`/api/stock/date/${isoDate}`);
     if (!response.ok) throw new Error('Błąd pobierania stanów');
     const stockData = await response.json();
 
@@ -134,7 +173,10 @@ async function loadDateStock(date) {
     stockData.forEach(item => {
       const input = dateProductsStock.querySelector(`#stock-${item.productId}`);
       if (input) {
-        input.value = item.remaining;
+        const value = typeof item.capacity === 'number'
+          ? item.capacity
+          : (typeof item.remaining === 'number' ? item.remaining : 0);
+        input.value = value;
       }
     });
 
@@ -178,14 +220,17 @@ async function saveDateStockData() {
 
   try {
     const stockData = collectStockData(dateProductsStock);
-    const dayIndex = (currentDate.getDay() + 6) % 7;
+    const isoDate = formatDateForApi(currentDate);
+    if (!isoDate) {
+      throw new Error('Nieprawidłowa data');
+    }
 
     const response = await fetch('/api/stock', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(stockData.map(item => ({
         productId: item.productId,
-        dayIndex: dayIndex,
+        date: isoDate,
         capacity: item.capacity
       })))
     });
@@ -194,6 +239,7 @@ async function saveDateStockData() {
 
     showMessage(`Zapisano stany dla ${currentDate.toLocaleDateString('pl-PL')}`, 'success');
     loadStockOverview();
+    loadDateStock(currentDate);
   } catch (error) {
     console.error('Błąd zapisywania stanów:', error);
     showMessage('Błąd zapisywania stanów', 'error');

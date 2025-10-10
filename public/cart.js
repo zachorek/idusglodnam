@@ -26,6 +26,16 @@ let lastSummaryTotals = {
 };
 let selectedPickupDate = null;
 
+function formatPickupDateForApi(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    return '';
+  }
+  const year = date.getFullYear();
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const day = date.getDate().toString().padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function parsePrice(value) {
   if (typeof value === 'number') {
     return value;
@@ -383,11 +393,16 @@ if (orderForm) {
       showOrderMessage('error', 'Wybierz datę odbioru z kalendarza.');
       return;
     }
+    const pickupDateStr = formatPickupDateForApi(selectedPickupDate);
+    if (!pickupDateStr) {
+      showOrderMessage('error', 'Wybierz prawidłową datę odbioru.');
+      return;
+    }
     const pickupDayIndex = (selectedPickupDate.getDay() + 6) % 7;
 
     // pre-check remaining stock for selected day
     try {
-      const res = await fetch(`/api/stock/${pickupDayIndex}`);
+      const res = await fetch(`/api/stock/date/${pickupDateStr}`);
       if (res.ok) {
         const stock = await res.json();
         const stockMap = new Map(stock.map((s) => [String(s.productId), Number(s.remaining) || 0]));
@@ -415,6 +430,7 @@ if (orderForm) {
       comment,
       payment,
       products: cart,
+      pickupDate: pickupDateStr,
       pickupDayIndex,
       discountCode: activeDiscount ? activeDiscount.code : '',
       discountPercent: activeDiscount ? activeDiscount.percent : 0,

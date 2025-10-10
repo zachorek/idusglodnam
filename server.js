@@ -157,6 +157,15 @@ const productStockSchema = new mongoose.Schema({
 productStockSchema.index({ productId: 1, dayIndex: 1 }, { unique: true });
 const ProductStock = mongoose.model('ProductStock', productStockSchema);
 
+const productDailyStockSchema = new mongoose.Schema({
+  productId: { type: String, required: true, index: true },
+  date: { type: String, required: true, index: true }, // YYYY-MM-DD
+  capacity: { type: Number, required: true, min: 0, default: 0 },
+  reserved: { type: Number, required: true, min: 0, default: 0 }
+}, { timestamps: true });
+productDailyStockSchema.index({ productId: 1, date: 1 }, { unique: true });
+const ProductDailyStock = mongoose.model('ProductDailyStock', productDailyStockSchema);
+
 // In-memory caches for frequently accessed collections
 let cachedProducts = null;
 let cachedProductsFetchedAt = 0;
@@ -182,6 +191,56 @@ function setProductsCache(data) {
 function setCategoriesCache(data) {
   cachedCategories = data;
   cachedCategoriesFetchedAt = Date.now();
+}
+
+function normalizeDateInput(value) {
+  if (!value) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) {
+      return null;
+    }
+    const year = value.getFullYear();
+    const month = value.getMonth() + 1;
+    const day = value.getDate();
+    return `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(trimmed);
+    if (!match) {
+      return null;
+    }
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
+      return null;
+    }
+    const date = new Date(year, month - 1, day);
+    if (Number.isNaN(date.getTime()) || date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+      return null;
+    }
+    return `${match[1]}-${match[2]}-${match[3]}`;
+  }
+
+  return null;
+}
+
+function getDayIndexFromDateString(dateStr) {
+  const normalized = normalizeDateInput(dateStr);
+  if (!normalized) {
+    return null;
+  }
+  const [year, month, day] = normalized.split('-').map((part) => Number(part));
+  const date = new Date(year, (month || 1) - 1, day);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return (date.getDay() + 6) % 7;
 }
 
 function invalidateProductsCache() {
@@ -245,13 +304,66 @@ app.get('/api/stock/:dayIndex', async (req, res) => {
     const stockMap = new Map(stock.map((s) => [String(s.productId), s]));
     const result = products.map((p) => {
       const s = stockMap.get(String(p._id));
-      const remaining = s ? Math.max(0, Number(s.capacity) - Number(s.reserved)) : 0;
-      return { productId: String(p._id), name: p.name, remaining };
+      const capacity = s ? Math.max(0, Number(s.capacity) || 0) : 0;
+      const remaining = capacity;
+      return {
+        productId: String(p._id),
+        name: p.name,
+        capacity,
+        reserved: 0,
+        remaining,
+        dayIndex
+      };
     });
     res.json(result);
   } catch (err) {
     console.error('Błąd pobierania stanów magazynowych:', err);
     res.status(500).json({ error: 'Błąd pobierania stanów magazynowych' });
+  }
+});
+
+app.get('/api/stock/date/:date', async (req, res) => {
+  const normalizedDate = normalizeDateInput(req.params.date);
+  if (!normalizedDate) {
+    return res.status(400).json({ error: 'Nieprawidłowa data' });
+  }
+  const dayIndex = getDayIndexFromDateString(normalizedDate);
+  if (dayIndex === null) {
+    return res.status(400).json({ error: 'Nie można ustalić dnia tygodnia dla daty' });
+  }
+  try {
+    const [products, weeklyStock, dailyStock] = await Promise.all([
+      Product.find().lean(),
+      ProductStock.find({ dayIndex }).lean(),
+      ProductDailyStock.find({ date: normalizedDate }).lean()
+    ]);
+
+    const weeklyMap = new Map(weeklyStock.map((doc) => [String(doc.productId), Math.max(0, Number(doc.capacity) || 0)]));
+    const dailyMap = new Map(dailyStock.map((doc) => [String(doc.productId), doc]));
+
+    const result = products.map((product) => {
+      const productId = String(product._id);
+      const override = dailyMap.get(productId);
+      const weeklyCapacity = weeklyMap.get(productId) || 0;
+      const capacity = override ? Math.max(0, Number(override.capacity) || 0) : weeklyCapacity;
+      const reserved = override ? Math.max(0, Number(override.reserved) || 0) : 0;
+      const remaining = Math.max(0, capacity - reserved);
+      return {
+        productId,
+        name: product.name,
+        capacity,
+        reserved,
+        remaining,
+        source: override ? 'date' : 'weekly',
+        date: normalizedDate,
+        dayIndex
+      };
+    });
+
+    res.json(result);
+  } catch (err) {
+    console.error('Błąd pobierania stanów dla daty:', err);
+    res.status(500).json({ error: 'Błąd pobierania stanów dla daty' });
   }
 });
 
@@ -284,32 +396,64 @@ app.get('/api/products/day/:dayIndex', async (req, res) => {
   }
 });
 
-// Upsert capacities in bulk: [{ productId, dayIndex, capacity }]
+// Upsert capacities in bulk. Supports weekly templates ({ productId, dayIndex, capacity })
+// and date overrides ({ productId, date, capacity }).
 app.put('/api/stock', async (req, res) => {
   const items = Array.isArray(req.body) ? req.body : [];
-  const normalized = items
-    .map((item) => ({
-      productId: item && item.productId ? String(item.productId) : '',
-      dayIndex: Number(item && item.dayIndex),
-      capacity: Math.max(0, Number(item && item.capacity))
-    }))
-    .filter((i) => i.productId && Number.isInteger(i.dayIndex) && i.dayIndex >= 0 && i.dayIndex <= 6 && Number.isFinite(i.capacity));
+  const weeklyItems = [];
+  const dailyItems = [];
 
-  if (!normalized.length) {
+  items.forEach((item) => {
+    if (!item) {
+      return;
+    }
+    const productId = item.productId ? String(item.productId) : '';
+    const capacity = Math.max(0, Number(item.capacity));
+    if (!productId || !Number.isFinite(capacity)) {
+      return;
+    }
+
+    const normalizedDate = normalizeDateInput(item.date);
+    if (normalizedDate) {
+      dailyItems.push({ productId, date: normalizedDate, capacity });
+      return;
+    }
+
+    const dayIndex = Number(item.dayIndex);
+    if (Number.isInteger(dayIndex) && dayIndex >= 0 && dayIndex <= 6) {
+      weeklyItems.push({ productId, dayIndex, capacity });
+    }
+  });
+
+  if (!weeklyItems.length && !dailyItems.length) {
     return res.status(400).json({ error: 'Brak danych do zapisania' });
   }
 
   try {
-    const ops = normalized.map((i) => ({
-      updateOne: {
-        filter: { productId: i.productId, dayIndex: i.dayIndex },
-        update: { $set: { capacity: i.capacity }, $setOnInsert: { reserved: 0 } },
-        upsert: true
-      }
-    }));
-    if (ops.length) {
-      await ProductStock.bulkWrite(ops, { ordered: false });
+    if (weeklyItems.length) {
+      const weeklyOps = weeklyItems.map((i) => ({
+        updateOne: {
+          filter: { productId: i.productId, dayIndex: i.dayIndex },
+          update: { $set: { capacity: i.capacity }, $setOnInsert: { reserved: 0 } },
+          upsert: true
+        }
+      }));
+      await ProductStock.bulkWrite(weeklyOps, { ordered: false });
     }
+
+    if (dailyItems.length) {
+      for (const item of dailyItems) {
+        const doc = await ProductDailyStock.findOneAndUpdate(
+          { productId: item.productId, date: item.date },
+          { $set: { capacity: item.capacity }, $setOnInsert: { reserved: 0 } },
+          { upsert: true, new: true }
+        );
+        if (doc && doc.reserved > item.capacity) {
+          await ProductDailyStock.updateOne({ _id: doc._id }, { $set: { reserved: item.capacity } });
+        }
+      }
+    }
+
     res.json({ success: true });
   } catch (err) {
     console.error('Błąd zapisu stanów magazynowych:', err);
@@ -711,6 +855,7 @@ const Order = mongoose.model("Order", new mongoose.Schema({
   discountAmount: { type: Number, default: 0 },
   totalBeforeDiscount: { type: Number, default: 0 },
   totalAfterDiscount: { type: Number, default: 0 },
+  pickupDate: { type: String, default: '' },
   pickupDayIndex: { type: Number, min: 0, max: 6 },
   createdAt: { type: Date, default: Date.now }
 }));
@@ -718,9 +863,13 @@ const Order = mongoose.model("Order", new mongoose.Schema({
 app.post("/api/orders", async (req, res) => {
   try {
     const products = Array.isArray(req.body.products) ? req.body.products : [];
-    const pickupDayIndex = Number(req.body.pickupDayIndex);
-    if (!Number.isInteger(pickupDayIndex) || pickupDayIndex < 0 || pickupDayIndex > 6) {
-      return res.status(400).json({ error: 'Wybierz dzień odbioru (0-6).' });
+    const pickupDate = normalizeDateInput(req.body.pickupDate);
+    if (!pickupDate) {
+      return res.status(400).json({ error: 'Wybierz datę odbioru.' });
+    }
+    const pickupDayIndex = getDayIndexFromDateString(pickupDate);
+    if (pickupDayIndex === null) {
+      return res.status(400).json({ error: 'Nie można ustalić dnia tygodnia dla wybranej daty.' });
     }
 
     const normalizedProducts = products
@@ -750,23 +899,52 @@ app.post("/api/orders", async (req, res) => {
     const discountAmount = Number((totalBeforeDiscount * discountPercent / 100).toFixed(2));
     const totalAfterDiscount = Math.max(0, Number((totalBeforeDiscount - discountAmount).toFixed(2)));
 
+    const weeklyStockDocs = await ProductStock.find({ dayIndex: pickupDayIndex }).lean();
+    const weeklyCapacityMap = new Map(weeklyStockDocs.map((doc) => [String(doc.productId), Math.max(0, Number(doc.capacity) || 0)]));
+
     // Reserve stock atomically for the selected day
     const insufficient = [];
+    const reservations = [];
     for (const item of normalizedProducts) {
       const productId = String(item.id || '');
       const qty = Number(item.quantity) || 0;
       if (!productId || qty <= 0) continue;
-      const updated = await ProductStock.findOneAndUpdate(
-        { productId, dayIndex: pickupDayIndex, $expr: { $lte: [ { $add: ['$reserved', qty] }, '$capacity' ] } },
+
+      const fallbackCapacity = weeklyCapacityMap.get(productId) || 0;
+
+      await ProductDailyStock.findOneAndUpdate(
+        { productId, date: pickupDate },
+        { $setOnInsert: { capacity: fallbackCapacity, reserved: 0 } },
+        { upsert: true, new: true }
+      );
+
+      await ProductStock.findOneAndUpdate(
+        { productId, dayIndex: pickupDayIndex },
+        { $setOnInsert: { capacity: fallbackCapacity, reserved: 0 } },
+        { upsert: true, new: true }
+      );
+
+      const reservedUpdate = await ProductDailyStock.findOneAndUpdate(
+        { productId, date: pickupDate, $expr: { $lte: [{ $add: ['$reserved', qty] }, '$capacity'] } },
         { $inc: { reserved: qty } },
         { new: true }
       );
-      if (!updated) {
+      if (!reservedUpdate) {
         insufficient.push(item.name || productId);
+        break;
       }
+      reservations.push({ productId, qty });
     }
 
     if (insufficient.length) {
+      if (reservations.length) {
+        await Promise.all(reservations.map((entry) => (
+          ProductDailyStock.updateOne(
+            { productId: entry.productId, date: pickupDate, reserved: { $gte: entry.qty } },
+            { $inc: { reserved: -entry.qty } }
+          )
+        )));
+      }
       return res.status(400).json({ error: `Brak wystarczającej ilości: ${insufficient.join(', ')} na wybrany dzień.` });
     }
 
@@ -776,6 +954,7 @@ app.post("/api/orders", async (req, res) => {
       comment: typeof req.body.comment === 'string' ? req.body.comment : '',
       payment: typeof req.body.payment === 'string' ? req.body.payment : '',
       products: normalizedProducts,
+      pickupDate,
       pickupDayIndex,
       discountCode,
       discountPercent,

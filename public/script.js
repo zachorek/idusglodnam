@@ -27,6 +27,10 @@ let lastLoadedProducts = [];
 let menuPickupCalendar = null;
 let menuInteractiveInput = null;
 let activeMenuAvailabilityFilter = null;
+let activeMenuDateString = null;
+let activeMenuStockByProductId = new Map();
+let activeMenuStockRequestId = 0;
+let lastFetchedMenuStockDate = null;
 
 const bodyScrollLockState = {
   active: false,
@@ -367,6 +371,67 @@ function normalizeAvailabilityDaysForRender(days) {
   return { daily, days: unique };
 }
 
+function normalizeDateToYMD(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    return null;
+  }
+  const year = date.getFullYear();
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const day = date.getDate().toString().padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getActiveMenuStockInfo(productId) {
+  if (!productId) {
+    return null;
+  }
+  return activeMenuStockByProductId.get(String(productId)) || null;
+}
+
+async function fetchMenuStockForDate(dateString) {
+  if (!dateString) {
+    activeMenuStockByProductId = new Map();
+    lastFetchedMenuStockDate = null;
+    renderProductsByCategory(lastLoadedCategories, lastLoadedProducts);
+    return;
+  }
+  const requestId = ++activeMenuStockRequestId;
+  try {
+    const response = await fetch(`/api/stock/date/${dateString}`);
+    if (!response.ok) {
+      throw new Error('Błąd odpowiedzi serwera');
+    }
+    const payload = await response.json();
+    if (requestId !== activeMenuStockRequestId) {
+      return;
+    }
+    const map = new Map();
+    if (Array.isArray(payload)) {
+      payload.forEach((item) => {
+        const productId = item && item.productId ? String(item.productId) : '';
+        if (!productId) {
+          return;
+        }
+        const capacity = Math.max(0, Number(item.capacity) || 0);
+        const reserved = Math.max(0, Number(item.reserved) || 0);
+        const remaining = Math.max(0, Number(item.remaining) || Math.max(0, capacity - reserved));
+        map.set(productId, { capacity, reserved, remaining });
+      });
+    }
+    activeMenuStockByProductId = map;
+    lastFetchedMenuStockDate = dateString;
+    renderProductsByCategory(lastLoadedCategories, lastLoadedProducts);
+  } catch (err) {
+    if (requestId !== activeMenuStockRequestId) {
+      return;
+    }
+    console.error('Błąd pobierania stanów dla daty:', err);
+    activeMenuStockByProductId = new Map();
+    lastFetchedMenuStockDate = null;
+    renderProductsByCategory(lastLoadedCategories, lastLoadedProducts);
+  }
+}
+
 function deriveMenuAvailabilityIndexFromDate(date) {
   if (!(date instanceof Date)) {
     return null;
@@ -384,21 +449,26 @@ function deriveMenuAvailabilityIndexFromDate(date) {
 }
 
 function handleMenuDateChange(date) {
-  const nextFilter = deriveMenuAvailabilityIndexFromDate(date);
-  if (activeMenuAvailabilityFilter === nextFilter) {
-    updateMenuFilterControlsState();
-    return;
+  const normalizedDate = date instanceof Date ? normalizeDateToYMD(date) : null;
+  activeMenuDateString = normalizedDate;
+  activeMenuAvailabilityFilter = deriveMenuAvailabilityIndexFromDate(date);
+  if (!normalizedDate) {
+    activeMenuStockByProductId = new Map();
+    lastFetchedMenuStockDate = null;
+    activeMenuStockRequestId += 1;
   }
-  activeMenuAvailabilityFilter = nextFilter;
   updateMenuFilterControlsState();
   renderProductsByCategory(lastLoadedCategories, lastLoadedProducts);
+  if (normalizedDate) {
+    fetchMenuStockForDate(normalizedDate);
+  }
 }
 
 function updateMenuFilterControlsState() {
   if (!menuPickupClearButton) {
     return;
   }
-  const hasFilter = typeof activeMenuAvailabilityFilter === 'number';
+  const hasFilter = Boolean(activeMenuDateString);
   menuPickupClearButton.disabled = !hasFilter;
 }
 
@@ -472,6 +542,9 @@ async function fetchProducts(forceRefresh = false) {
     lastLoadedCategories = Array.isArray(categories) ? categories : [];
     lastLoadedProducts = Array.isArray(products) ? products : [];
     renderProductsByCategory(categories, products);
+    if (activeMenuDateString && lastFetchedMenuStockDate !== activeMenuDateString) {
+      fetchMenuStockForDate(activeMenuDateString);
+    }
   } catch (err) {
     if (hideSkeleton) {
       hideSkeleton();
@@ -901,7 +974,46 @@ function createProductCard(product) {
     addToCart(product._id, product.price, product.name);
   });
 
-  content.append(title, desc, price, button);
+  content.append(title, desc, price);
+
+  let availabilityState = null;
+  if (activeMenuDateString) {
+    const stockInfo = getActiveMenuStockInfo(product._id);
+    if (stockInfo) {
+      const totalRemaining = Math.max(0, Number(stockInfo.remaining) || 0);
+      const remainingAfterCart = Math.max(0, totalRemaining - getCartQuantityForProduct(String(product._id)));
+      const stockBadge = document.createElement('div');
+      stockBadge.classList.add('product-stock-badge');
+
+      if (remainingAfterCart > 10) {
+        stockBadge.textContent = 'Dostępność: 10+';
+        stockBadge.classList.add('product-stock-badge--plenty');
+        availabilityState = 'plenty';
+      } else if (remainingAfterCart > 0) {
+        stockBadge.textContent = `Dostępność: ${remainingAfterCart}`;
+        stockBadge.classList.add('product-stock-badge--limited');
+        availabilityState = 'limited';
+      } else {
+        stockBadge.textContent = 'Wyprzedane';
+        stockBadge.classList.add('product-stock-badge--soldout');
+        availabilityState = 'soldout';
+      }
+
+      content.appendChild(stockBadge);
+    }
+  }
+
+  if (availabilityState === 'plenty') {
+    button.classList.add('product-button--plenty');
+  } else if (availabilityState === 'limited') {
+    button.classList.add('product-button--limited');
+  } else if (availabilityState === 'soldout') {
+    button.disabled = true;
+    button.textContent = 'Wyprzedane';
+    button.classList.add('product-button--soldout');
+  }
+
+  content.appendChild(button);
   const availability = buildAvailabilityTiles(product.availabilityDays);
   card.appendChild(content);
   scheduleDescriptionTruncation(desc, descText);
@@ -1011,12 +1123,46 @@ function openProductModal(product) {
   price.innerHTML = `<strong>${product.price} zł</strong>`;
   info.appendChild(price);
 
+  let modalAvailabilityState = null;
+  if (activeMenuDateString) {
+    const stockInfo = getActiveMenuStockInfo(product._id);
+    if (stockInfo) {
+      const totalRemaining = Math.max(0, Number(stockInfo.remaining) || 0);
+      const remainingAfterCart = Math.max(0, totalRemaining - getCartQuantityForProduct(String(product._id)));
+      const stockBadge = document.createElement('div');
+      stockBadge.classList.add('product-stock-badge');
+      if (remainingAfterCart > 10) {
+        stockBadge.textContent = 'Dostępność: 10+';
+        stockBadge.classList.add('product-stock-badge--plenty');
+        modalAvailabilityState = 'plenty';
+      } else if (remainingAfterCart > 0) {
+        stockBadge.textContent = `Dostępność: ${remainingAfterCart}`;
+        stockBadge.classList.add('product-stock-badge--limited');
+        modalAvailabilityState = 'limited';
+      } else {
+        stockBadge.textContent = 'Wyprzedane';
+        stockBadge.classList.add('product-stock-badge--soldout');
+        modalAvailabilityState = 'soldout';
+      }
+      info.appendChild(stockBadge);
+    }
+  }
+
   const button = document.createElement('button');
   button.textContent = 'Dodaj do koszyka';
   button.addEventListener('click', () => {
     closeProductModal();
     addToCart(product._id, product.price, product.name);
   });
+  if (modalAvailabilityState === 'plenty') {
+    button.classList.add('product-button--plenty');
+  } else if (modalAvailabilityState === 'limited') {
+    button.classList.add('product-button--limited');
+  } else if (modalAvailabilityState === 'soldout') {
+    button.disabled = true;
+    button.textContent = 'Wyprzedane';
+    button.classList.add('product-button--soldout');
+  }
   info.appendChild(button);
 
   wrapper.appendChild(info);
@@ -1055,7 +1201,26 @@ function closeProductModal() {
   lastFocusedElement = null;
 }
 
+function getCartQuantityForProduct(productId) {
+  if (!productId) {
+    return 0;
+  }
+  const item = cart.find((entry) => String(entry.id) === String(productId));
+  return item ? Number(item.quantity) || 0 : 0;
+}
+
 function addToCart(id, price, name) {
+  const productId = String(id);
+  if (activeMenuDateString) {
+    const stockInfo = getActiveMenuStockInfo(productId);
+    if (stockInfo) {
+      const currentQty = getCartQuantityForProduct(productId);
+      if (currentQty >= stockInfo.remaining) {
+        showStockLimitNotice(name, stockInfo.remaining);
+        return;
+      }
+    }
+  }
   const existing = cart.find((item) => item.id === id);
   if (existing) {
     existing.quantity += 1;
@@ -1063,6 +1228,9 @@ function addToCart(id, price, name) {
     cart.push({ id, price, name, quantity: 1 });
   }
   saveCart();
+  if (activeMenuDateString && activeMenuStockByProductId.size) {
+    renderProductsByCategory(lastLoadedCategories, lastLoadedProducts);
+  }
   openCartActionModal(name);
 }
 
@@ -1095,11 +1263,34 @@ function openCartActionModal(productName) {
       : 'Produkt został dodany do koszyka.';
   }
 
+  cartActionModal.classList.remove('stock-warning');
   cartActionModal.classList.add('open');
   cartActionModal.setAttribute('aria-hidden', 'false');
   lockBodyScroll();
 
   const focusTarget = cartActionGoToCart || cartActionContinue || cartActionClose;
+  if (focusTarget) {
+    safeFocus(focusTarget);
+  }
+}
+
+function showStockLimitNotice(productName, remaining) {
+  const message = remaining > 0
+    ? `Możesz dodać maksymalnie ${remaining} szt. produktu ${productName} na wybrany dzień.`
+    : `Brak dostępnych sztuk produktu ${productName} na wybrany dzień.`;
+
+  if (!cartActionModal || !cartActionMessage) {
+    window.alert(message);
+    return;
+  }
+
+  lastCartActionFocusedElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  cartActionMessage.textContent = message;
+  cartActionModal.classList.add('open', 'stock-warning');
+  cartActionModal.setAttribute('aria-hidden', 'false');
+  lockBodyScroll();
+
+  const focusTarget = cartActionContinue || cartActionClose || cartActionGoToCart;
   if (focusTarget) {
     safeFocus(focusTarget);
   }
@@ -1111,6 +1302,7 @@ function closeCartActionModal() {
   }
 
   cartActionModal.classList.remove('open');
+  cartActionModal.classList.remove('stock-warning');
   cartActionModal.setAttribute('aria-hidden', 'true');
   unlockBodyScroll();
 

@@ -1,4 +1,6 @@
 const productGrid = document.getElementById('productGrid');
+const menuPickupDateInput = document.getElementById('menuPickupDate');
+const menuPickupDateClear = document.getElementById('menuPickupDateClear');
 const productModal = document.getElementById('productModal');
 const productModalBody = document.getElementById('productModalBody');
 const productModalClose = productModal ? productModal.querySelector('.modal-close') : null;
@@ -11,6 +13,7 @@ const PRODUCT_DAY_LABELS = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Pi
 const PRODUCT_DAY_ABBREVIATIONS = ['PN', 'WT', 'ŚR', 'CZ', 'PT', 'SO', 'ND'];
 const MAX_AVAILABILITY_TILES = 6;
 const PAGE_TRANSITION_DURATION = 350;
+const JS_DAY_TO_PRODUCT_DAY_INDEX = [6, 0, 1, 2, 3, 4, 5];
 
 let categoryRevealObserver = null;
 let pageIntroScheduled = false;
@@ -18,6 +21,9 @@ let pageTransitionsInitialized = false;
 
 let lastFocusedElement = null;
 let lastCartActionFocusedElement = null;
+let selectedAvailabilityDayIndex = null;
+let lastLoadedCategories = [];
+let lastLoadedProducts = [];
 
 const bodyScrollLockState = {
   active: false,
@@ -103,6 +109,14 @@ if (cartActionGoToCart) {
 
 if (cartActionContinue) {
   cartActionContinue.addEventListener('click', closeCartActionModal);
+}
+
+if (menuPickupDateInput) {
+  menuPickupDateInput.addEventListener('change', handleMenuPickupDateChange);
+}
+
+if (menuPickupDateClear) {
+  menuPickupDateClear.addEventListener('click', handleMenuPickupDateClear);
 }
 
 if (typeof document !== 'undefined') {
@@ -325,6 +339,8 @@ async function fetchProducts(forceRefresh = false) {
     if (hideSkeleton) {
       hideSkeleton();
     }
+    lastLoadedCategories = Array.isArray(categories) ? categories : [];
+    lastLoadedProducts = Array.isArray(products) ? products : [];
     renderProductsByCategory(categories, products);
   } catch (err) {
     if (hideSkeleton) {
@@ -345,14 +361,21 @@ function renderProductsByCategory(categories, products) {
   const fragment = document.createDocumentFragment();
   let appended = false;
 
+  const categoryList = Array.isArray(categories) ? categories : [];
+  const productList = Array.isArray(products) ? products : [];
+
   const categorized = new Map();
-  categories.forEach((category) => {
+  categoryList.forEach((category) => {
     categorized.set(category.name, []);
   });
 
   const uncategorized = [];
+  const filterDay = typeof selectedAvailabilityDayIndex === 'number' ? selectedAvailabilityDayIndex : null;
 
-  products.forEach((product) => {
+  productList.forEach((product) => {
+    if (!shouldRenderProductForDay(product, filterDay)) {
+      return;
+    }
     const bucket = categorized.get(product.category);
     if (bucket) {
       bucket.push(product);
@@ -361,7 +384,7 @@ function renderProductsByCategory(categories, products) {
     }
   });
 
-  categories.forEach((category) => {
+  categoryList.forEach((category) => {
     const items = categorized.get(category.name) || [];
     if (!items.length) {
       return;
@@ -382,6 +405,66 @@ function renderProductsByCategory(categories, products) {
 
   productGrid.appendChild(fragment);
   applyCategoryFadeIn();
+}
+
+function shouldRenderProductForDay(product, filterDayIndex) {
+  if (filterDayIndex === null) {
+    return true;
+  }
+  const availability = normalizeAvailabilityDaysForRender(product ? product.availabilityDays : []);
+  if (availability.daily) {
+    return true;
+  }
+  return availability.days.includes(filterDayIndex);
+}
+
+function handleMenuPickupDateChange() {
+  if (!menuPickupDateInput) {
+    return;
+  }
+  selectedAvailabilityDayIndex = deriveAvailabilityDayFromDate(menuPickupDateInput.value);
+  rerenderProductsForCurrentFilter();
+}
+
+function handleMenuPickupDateClear(event) {
+  if (event && typeof event.preventDefault === 'function') {
+    event.preventDefault();
+  }
+  if (menuPickupDateInput) {
+    menuPickupDateInput.value = '';
+  }
+  selectedAvailabilityDayIndex = null;
+  rerenderProductsForCurrentFilter();
+}
+
+function deriveAvailabilityDayFromDate(value) {
+  if (!value) {
+    return null;
+  }
+  const parts = value.split('-').map(Number);
+  if (parts.length !== 3) {
+    return null;
+  }
+  const [year, month, day] = parts;
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
+    return null;
+  }
+  const localDate = new Date(year, month - 1, day);
+  if (Number.isNaN(localDate.getTime())) {
+    return null;
+  }
+  const jsDay = localDate.getDay();
+  if (jsDay < 0 || jsDay > 6) {
+    return null;
+  }
+  return JS_DAY_TO_PRODUCT_DAY_INDEX[jsDay] ?? null;
+}
+
+function rerenderProductsForCurrentFilter() {
+  if (!productGrid || !Array.isArray(lastLoadedCategories) || !Array.isArray(lastLoadedProducts)) {
+    return;
+  }
+  renderProductsByCategory(lastLoadedCategories, lastLoadedProducts);
 }
 
 function createCategorySection(title, items) {

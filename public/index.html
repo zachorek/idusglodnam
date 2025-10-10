@@ -42,8 +42,8 @@
           <label for="menuPickupDate" class="order-filter__label">Filtruj według daty odbioru</label>
           <div class="order-filter__control">
             <input type="text" id="menuPickupDate" name="menuPickupDate" class="order-filter__input" placeholder="Wybierz datę" readonly>
-            <button type="button" class="order-date-toggle" data-calendar-toggle aria-expanded="false">
-              Pokaż kalendarz
+            <button type="button" id="menuPickupClear" class="order-filter__clear" aria-label="Wyczyść filtr daty" disabled>
+              Wyczyść filtr
             </button>
           </div>
           <div id="menuCalendarContainer" class="order-date-calendar" hidden></div>

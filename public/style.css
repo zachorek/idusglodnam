@@ -1,8 +1,10 @@
 .order-filters {
-  margin: 20px 0 24px;
+  margin: 20px auto 24px;
   display: flex;
   flex-wrap: wrap;
   gap: 16px;
+  width: 100%;
+  max-width: 720px;
   justify-content: flex-start;
 }
 
@@ -35,7 +37,8 @@
   padding: 10px 14px;
   border-radius: 12px;
   border: 1px solid rgba(79, 58, 42, 0.25);
-  background: #fff;
+  box-shadow: 0 4px 10px rgba(79, 58, 42, 0.12);
+  background: #fde4be;
   font-weight: 600;
   color: #3e2717;
   cursor: pointer;
@@ -54,25 +57,32 @@
   font-weight: 500;
 }
 
-.order-date-toggle {
+.order-filter__clear {
   flex: 0 0 auto;
-  padding: 9px 16px;
+  padding: 10px 18px;
   border-radius: 12px;
-  border: 1px solid rgba(252, 168, 71, 0.55);
-  background: rgba(252, 168, 71, 0.18);
-  color: rgba(79, 58, 42, 0.9);
+  border: 1px solid rgba(79, 58, 42, 0.35);
+  background: rgba(252, 168, 71, 0.15);
+  color: #4f2f1d;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.order-date-toggle:hover,
-.order-date-toggle:focus-visible,
-.order-date-toggle[aria-expanded="true"] {
+.order-filter__clear:hover,
+.order-filter__clear:focus-visible {
   background: rgba(252, 168, 71, 0.28);
-  border-color: rgba(252, 168, 71, 0.75);
-  color: #4f3a2a;
+  border-color: rgba(252, 168, 71, 0.65);
+  color: #3e2717;
+  box-shadow: 0 6px 18px rgba(252, 168, 71, 0.28);
   outline: none;
+}
+
+.order-filter__clear:disabled {
+  opacity: 0.45;
+  cursor: default;
+  pointer-events: none;
+  box-shadow: none;
 }
 
 .order-date-calendar {
@@ -89,6 +99,19 @@
   max-width: 320px;
   box-shadow: 0 18px 32px -20px rgba(63, 34, 14, 0.35);
   border-radius: 16px;
+  background: #fde4be;
+  border: 1px solid rgba(79, 58, 42, 0.2);
+}
+
+.order-date-calendar .flatpickr-months,
+.order-date-calendar .flatpickr-innerContainer,
+.order-date-calendar .flatpickr-weekdays,
+.order-date-calendar .flatpickr-weekday {
+  background: #fde4be;
+}
+
+.order-date-calendar .flatpickr-weekday {
+  color: #4f2f1d;
 }
 
 @media (max-width: 600px) {
@@ -97,9 +120,8 @@
     align-items: stretch;
   }
 
-  .order-date-toggle {
+  .order-filter__clear {
     width: 100%;
-    text-align: center;
   }
 
   .order-date-calendar .flatpickr-calendar {

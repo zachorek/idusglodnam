@@ -1,7 +1,7 @@
 const productGrid = document.getElementById('productGrid');
 const menuPickupDateInput = document.getElementById('menuPickupDate');
-const menuCalendarToggle = document.querySelector('[data-calendar-toggle]');
 const menuCalendarContainer = document.getElementById('menuCalendarContainer');
+const menuPickupClearButton = document.getElementById('menuPickupClear');
 const productModal = document.getElementById('productModal');
 const productModalBody = document.getElementById('productModalBody');
 const productModalClose = productModal ? productModal.querySelector('.modal-close') : null;
@@ -25,6 +25,8 @@ let lastCartActionFocusedElement = null;
 let lastLoadedCategories = [];
 let lastLoadedProducts = [];
 let menuPickupCalendar = null;
+let menuInteractiveInput = null;
+let activeMenuAvailabilityFilter = null;
 
 const bodyScrollLockState = {
   active: false,
@@ -132,36 +134,68 @@ if (menuPickupDateInput && typeof window !== 'undefined' && typeof window.flatpi
     allowInput: false,
     clickOpens: false,
     appendTo: menuCalendarContainer || undefined,
-    onChange: () => {
+    onChange: (selectedDates) => {
+      const selectedDate = Array.isArray(selectedDates) && selectedDates.length ? selectedDates[0] : null;
+      handleMenuDateChange(selectedDate instanceof Date ? selectedDate : null);
       hideMenuCalendar();
     }
   });
 
-  hideMenuCalendar();
+  const interactiveInput = menuPickupCalendar && menuPickupCalendar.altInput ? menuPickupCalendar.altInput : null;
 
-  const interactiveInput = menuPickupCalendar && menuPickupCalendar.altInput ? menuPickupCalendar.altInput : menuPickupDateInput;
+  if (menuPickupDateInput) {
+    menuPickupDateInput.setAttribute('aria-haspopup', 'dialog');
+    menuPickupDateInput.setAttribute('aria-expanded', 'false');
+  }
 
   if (interactiveInput) {
-    interactiveInput.addEventListener('click', (event) => {
+    menuInteractiveInput = interactiveInput;
+    menuInteractiveInput.setAttribute('aria-haspopup', 'dialog');
+    menuInteractiveInput.setAttribute('aria-expanded', 'false');
+  } else {
+    menuInteractiveInput = menuPickupDateInput;
+  }
+
+  const toggleTarget = interactiveInput || menuPickupDateInput;
+
+  if (toggleTarget) {
+    toggleTarget.addEventListener('click', (event) => {
       event.preventDefault();
-      setMenuCalendarVisibility(true);
+      if (typeof toggleTarget.focus === 'function') {
+        try {
+          toggleTarget.focus({ preventScroll: true });
+        } catch (err) {
+          toggleTarget.focus();
+        }
+      }
+      const expanded = menuCalendarContainer && !menuCalendarContainer.hidden;
+      setMenuCalendarVisibility(!expanded);
     });
-    interactiveInput.addEventListener('keydown', (event) => {
+    toggleTarget.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
-        setMenuCalendarVisibility(true);
+        const expanded = menuCalendarContainer && !menuCalendarContainer.hidden;
+        setMenuCalendarVisibility(!expanded);
       }
     });
   }
 
-  if (menuCalendarToggle) {
-    menuCalendarToggle.addEventListener('click', (event) => {
-      event.preventDefault();
-      const expanded = menuCalendarToggle.getAttribute('aria-expanded') === 'true';
-      setMenuCalendarVisibility(!expanded);
-    });
-  }
+  hideMenuCalendar();
 }
+
+if (menuPickupClearButton) {
+  menuPickupClearButton.addEventListener('click', () => {
+    handleMenuDateChange(null);
+    if (menuPickupCalendar) {
+      menuPickupCalendar.clear();
+    } else if (menuPickupDateInput) {
+      menuPickupDateInput.value = '';
+    }
+    hideMenuCalendar();
+  });
+}
+
+updateMenuFilterControlsState();
 
 if (typeof document !== 'undefined') {
   setupPageTransitions();
@@ -333,6 +367,58 @@ function normalizeAvailabilityDaysForRender(days) {
   return { daily, days: unique };
 }
 
+function deriveMenuAvailabilityIndexFromDate(date) {
+  if (!(date instanceof Date)) {
+    return null;
+  }
+  const time = date.getTime();
+  if (Number.isNaN(time)) {
+    return null;
+  }
+  const jsDay = date.getDay();
+  if (jsDay < 0 || jsDay >= JS_DAY_TO_PRODUCT_DAY_INDEX.length) {
+    return null;
+  }
+  const mapped = JS_DAY_TO_PRODUCT_DAY_INDEX[jsDay];
+  return typeof mapped === 'number' ? mapped : null;
+}
+
+function handleMenuDateChange(date) {
+  const nextFilter = deriveMenuAvailabilityIndexFromDate(date);
+  if (activeMenuAvailabilityFilter === nextFilter) {
+    updateMenuFilterControlsState();
+    return;
+  }
+  activeMenuAvailabilityFilter = nextFilter;
+  updateMenuFilterControlsState();
+  renderProductsByCategory(lastLoadedCategories, lastLoadedProducts);
+}
+
+function updateMenuFilterControlsState() {
+  if (!menuPickupClearButton) {
+    return;
+  }
+  const hasFilter = typeof activeMenuAvailabilityFilter === 'number';
+  menuPickupClearButton.disabled = !hasFilter;
+}
+
+function filterProductsForMenu(products) {
+  if (!Array.isArray(products)) {
+    return [];
+  }
+  if (typeof activeMenuAvailabilityFilter !== 'number') {
+    return products;
+  }
+
+  return products.filter((product) => {
+    const availability = normalizeAvailabilityDaysForRender(product.availabilityDays);
+    if (availability.daily) {
+      return true;
+    }
+    return availability.days.includes(activeMenuAvailabilityFilter);
+  });
+}
+
 function buildAvailabilityTiles(days) {
   const data = normalizeAvailabilityDaysForRender(days);
   const tiles = [];
@@ -406,7 +492,8 @@ function renderProductsByCategory(categories, products) {
   let appended = false;
 
   const categoryList = Array.isArray(categories) ? categories : [];
-  const productList = Array.isArray(products) ? products : [];
+  const productListSource = Array.isArray(products) ? products : [];
+  const productList = filterProductsForMenu(productListSource);
 
   const categorized = new Map();
   categoryList.forEach((category) => {
@@ -562,28 +649,31 @@ function createSkeletonCard(globalIndex) {
 }
 
 function setMenuCalendarVisibility(visible) {
-  if (!menuCalendarContainer) {
+  const shouldShow = Boolean(visible);
+  if (menuCalendarContainer) {
+    menuCalendarContainer.hidden = !shouldShow;
+  }
+  if (!shouldShow) {
+    updateMenuCalendarExpansionState(false);
     return;
   }
-  if (visible) {
-    menuCalendarContainer.hidden = false;
-    if (menuCalendarToggle) {
-      menuCalendarToggle.textContent = 'Ukryj kalendarz';
-      menuCalendarToggle.setAttribute('aria-expanded', 'true');
-    }
-    return;
-  }
-  hideMenuCalendar();
+  updateMenuCalendarExpansionState(true);
 }
 
 function hideMenuCalendar() {
-  if (!menuCalendarContainer) {
-    return;
+  if (menuCalendarContainer) {
+    menuCalendarContainer.hidden = true;
   }
-  menuCalendarContainer.hidden = true;
-  if (menuCalendarToggle) {
-    menuCalendarToggle.textContent = 'Pokaż kalendarz';
-    menuCalendarToggle.setAttribute('aria-expanded', 'false');
+  updateMenuCalendarExpansionState(false);
+}
+
+function updateMenuCalendarExpansionState(expanded) {
+  const expandedValue = expanded ? 'true' : 'false';
+  if (menuInteractiveInput) {
+    menuInteractiveInput.setAttribute('aria-expanded', expandedValue);
+  }
+  if (menuPickupDateInput) {
+    menuPickupDateInput.setAttribute('aria-expanded', expandedValue);
   }
 }
 

@@ -35,10 +35,16 @@
         <h2>Menu wypieków</h2>
       </header>
       <div class="order-date-bar glass-panel" aria-label="Wybierz datę odbioru">
-        <div class="cart-field">
-          <span>Wybierz datę odbioru:</span>
-          <input type="text" id="menuPickupDate" name="menuPickupDate" placeholder="Wybierz datę" readonly>
+        <div class="order-date-inner">
+          <div class="cart-field order-date-field">
+            <span>Wybierz datę odbioru:</span>
+            <input type="text" id="menuPickupDate" name="menuPickupDate" placeholder="Wybierz datę" readonly>
+          </div>
+          <button type="button" class="order-date-toggle" data-calendar-toggle aria-expanded="false">
+            Pokaż kalendarz
+          </button>
         </div>
+        <div id="menuCalendarContainer" class="order-date-calendar" hidden></div>
       </div>
       <div class="same-day-note" role="status" aria-live="polite">
         <p class="same-day-note__lead">Wygodnie zamów pieczywo na każdy dzień tygodnia i odbierz je u Chachora!</p>

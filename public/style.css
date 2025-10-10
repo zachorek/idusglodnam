@@ -5,6 +5,93 @@
   background: rgba(255, 249, 236, 0.9);
   border: 1px solid rgba(252, 168, 71, 0.25);
   max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.order-date-inner {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+}
+
+.order-date-field {
+  width: 100%;
+  max-width: 320px;
+}
+
+.order-date-field input,
+.order-date-field .flatpickr-input {
+  padding: 12px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(79, 58, 42, 0.25);
+  background: #fff;
+  font-weight: 600;
+  color: #3e2717;
+  cursor: pointer;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.order-date-field input:focus,
+.order-date-field .flatpickr-input:focus {
+  outline: 2px solid rgba(252, 168, 71, 0.6);
+  outline-offset: 2px;
+}
+
+.order-date-field input::placeholder,
+.order-date-field .flatpickr-input::placeholder {
+  color: rgba(62, 39, 23, 0.5);
+  font-weight: 500;
+}
+
+.order-date-toggle {
+  padding: 10px 18px;
+  border-radius: 14px;
+  border: none;
+  background: linear-gradient(135deg, rgba(252, 168, 71, 0.95), rgba(207, 124, 26, 0.92));
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 12px 24px -14px rgba(252, 168, 71, 0.7);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.order-date-toggle:hover,
+.order-date-toggle:focus-visible {
+  outline: none;
+  transform: translateY(-1px);
+  box-shadow: 0 18px 30px -18px rgba(207, 124, 26, 0.7);
+}
+
+.order-date-calendar {
+  width: 100%;
+  max-width: 320px;
+}
+
+.order-date-calendar[hidden] {
+  display: none;
+}
+
+.order-date-calendar .flatpickr-calendar {
+  width: 100%;
+}
+
+#availabilityDate,
+#pickupDate {
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+}
+
+#availabilityDate .flatpickr-calendar,
+#pickupDate .flatpickr-calendar {
+  margin: 0 auto !important;
+  display: block !important;
 }
 
 /* Reset stylów */
@@ -3839,43 +3926,10 @@ body.about-gallery-zoom-open {
 }
 
 /* Flatpickr calendar centering */
-.flatpickr-calendar {
-  margin: 0 auto !important;
-  position: relative !important;
-  left: 50% !important;
-  transform: translateX(-50%) !important;
-}
-
-.flatpickr-calendar.open {
-  margin: 0 auto !important;
-  left: 50% !important;
-  transform: translateX(-50%) !important;
-}
-
-#availabilityDate {
-  display: flex !important;
-  justify-content: center !important;
-  align-items: center !important;
-}
-
-#availabilityDate .flatpickr-calendar {
-  margin: 0 auto !important;
-  display: block !important;
-  left: 50% !important;
-  transform: translateX(-50%) !important;
-}
-
-#pickupDate {
-  display: flex !important;
-  justify-content: center !important;
-  align-items: center !important;
-}
-
-#pickupDate .flatpickr-calendar {
-  margin: 0 auto !important;
-  display: block !important;
-  left: 50% !important;
-  transform: translateX(-50%) !important;
+.order-date-bar .flatpickr-calendar {
+  width: auto;
+  max-width: 320px;
+  margin-top: 12px;
 }
 
 /* Host stock management styles */

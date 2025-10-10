@@ -1,5 +1,7 @@
 const productGrid = document.getElementById('productGrid');
 const menuPickupDateInput = document.getElementById('menuPickupDate');
+const menuCalendarToggle = document.querySelector('[data-calendar-toggle]');
+const menuCalendarContainer = document.getElementById('menuCalendarContainer');
 const productModal = document.getElementById('productModal');
 const productModalBody = document.getElementById('productModalBody');
 const productModalClose = productModal ? productModal.querySelector('.modal-close') : null;
@@ -22,6 +24,7 @@ let lastFocusedElement = null;
 let lastCartActionFocusedElement = null;
 let lastLoadedCategories = [];
 let lastLoadedProducts = [];
+let menuPickupCalendar = null;
 
 const bodyScrollLockState = {
   active: false,
@@ -115,16 +118,48 @@ if (menuPickupDateInput && typeof window !== 'undefined' && typeof window.flatpi
 
   const maxDate = new Date();
   maxDate.setMonth(maxDate.getMonth() + 1);
+  maxDate.setDate(maxDate.getDate() + 1);
 
-  window.flatpickr(menuPickupDateInput, {
+  menuPickupCalendar = window.flatpickr(menuPickupDateInput, {
     minDate: tomorrow,
     maxDate,
     dateFormat: 'Y-m-d',
     altInput: true,
     altFormat: 'd F Y',
     locale: 'pl',
-    inline: true
+    inline: true,
+    allowInput: false,
+    clickOpens: false,
+    appendTo: menuCalendarContainer || undefined,
+    onChange: () => {
+      hideMenuCalendar();
+    }
   });
+
+  hideMenuCalendar();
+
+  const interactiveInput = menuPickupCalendar && menuPickupCalendar.altInput ? menuPickupCalendar.altInput : menuPickupDateInput;
+
+  if (interactiveInput) {
+    interactiveInput.addEventListener('click', (event) => {
+      event.preventDefault();
+      setMenuCalendarVisibility(true);
+    });
+    interactiveInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        setMenuCalendarVisibility(true);
+      }
+    });
+  }
+
+  if (menuCalendarToggle) {
+    menuCalendarToggle.addEventListener('click', (event) => {
+      event.preventDefault();
+      const expanded = menuCalendarToggle.getAttribute('aria-expanded') === 'true';
+      setMenuCalendarVisibility(!expanded);
+    });
+  }
 }
 
 if (typeof document !== 'undefined') {
@@ -523,6 +558,32 @@ function createSkeletonCard(globalIndex) {
   card.appendChild(availability);
 
   return card;
+}
+
+function setMenuCalendarVisibility(visible) {
+  if (!menuCalendarContainer) {
+    return;
+  }
+  if (visible) {
+    menuCalendarContainer.hidden = false;
+    if (menuCalendarToggle) {
+      menuCalendarToggle.textContent = 'Ukryj kalendarz';
+      menuCalendarToggle.setAttribute('aria-expanded', 'true');
+    }
+    return;
+  }
+  hideMenuCalendar();
+}
+
+function hideMenuCalendar() {
+  if (!menuCalendarContainer) {
+    return;
+  }
+  menuCalendarContainer.hidden = true;
+  if (menuCalendarToggle) {
+    menuCalendarToggle.textContent = 'Pokaż kalendarz';
+    menuCalendarToggle.setAttribute('aria-expanded', 'false');
+  }
 }
 
 function applyCategoryFadeIn() {

@@ -36,6 +36,29 @@ function formatPickupDateForApi(date) {
   return `${year}-${month}-${day}`;
 }
 
+function notifyStockRefresh(dateStr) {
+  if (!dateStr) {
+    return;
+  }
+  const payload = { date: dateStr, ts: Date.now() };
+  try {
+    if (typeof BroadcastChannel === 'function') {
+      const channel = new BroadcastChannel('chachor-stock');
+      channel.postMessage(payload);
+      channel.close();
+    }
+  } catch (err) {
+    // ignore broadcast errors
+  }
+  try {
+    const serialized = JSON.stringify(payload);
+    localStorage.setItem('chachor_stock_refresh_signal', serialized);
+    localStorage.setItem('chachor_stock_refresh_latest', serialized);
+  } catch (err) {
+    // ignore storage errors
+  }
+}
+
 function parsePrice(value) {
   if (typeof value === 'number') {
     return value;
@@ -456,6 +479,7 @@ if (orderForm) {
       });
 
       if (response.ok) {
+        notifyStockRefresh(pickupDateStr);
         showOrderMessage('success', 'Zamówienie złożone! Wkrótce dostaniesz maila z potwierdzeniem.');
         cart = [];
         saveCart();

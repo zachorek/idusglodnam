@@ -15,6 +15,7 @@ const PRODUCT_DAY_ABBREVIATIONS = ['PN', 'WT', 'ŚR', 'CZ', 'PT', 'SO', 'ND'];
 const MAX_AVAILABILITY_TILES = 6;
 const PAGE_TRANSITION_DURATION = 350;
 const JS_DAY_TO_PRODUCT_DAY_INDEX = [6, 0, 1, 2, 3, 4, 5];
+const STOCK_CHANNEL_NAME = 'chachor-stock';
 
 let categoryRevealObserver = null;
 let pageIntroScheduled = false;
@@ -31,6 +32,9 @@ let activeMenuDateString = null;
 let activeMenuStockByProductId = new Map();
 let activeMenuStockRequestId = 0;
 let lastFetchedMenuStockDate = null;
+let stockBroadcastChannel = null;
+let stockBroadcastInitialized = false;
+const pendingStockRefreshDates = new Set();
 
 const bodyScrollLockState = {
   active: false,
@@ -420,6 +424,7 @@ async function fetchMenuStockForDate(dateString) {
     }
     activeMenuStockByProductId = map;
     lastFetchedMenuStockDate = dateString;
+    pendingStockRefreshDates.delete(dateString);
     renderProductsByCategory(lastLoadedCategories, lastLoadedProducts);
   } catch (err) {
     if (requestId !== activeMenuStockRequestId) {
@@ -470,6 +475,91 @@ function updateMenuFilterControlsState() {
   }
   const hasFilter = Boolean(activeMenuDateString);
   menuPickupClearButton.disabled = !hasFilter;
+}
+
+function normalizeStockUpdatePayload(payload) {
+  if (!payload) {
+    return null;
+  }
+
+  let source = payload;
+  if (typeof payload === 'string') {
+    try {
+      source = JSON.parse(payload);
+    } catch (err) {
+      return null;
+    }
+  }
+
+  if (!source || typeof source !== 'object') {
+    return null;
+  }
+
+  const dateStr = typeof source.date === 'string' ? source.date.trim() : '';
+  if (!dateStr) {
+    return null;
+  }
+
+  return {
+    date: dateStr
+  };
+}
+
+function handleExternalStockRefreshMessage(payload) {
+  const normalized = normalizeStockUpdatePayload(payload);
+  if (!normalized) {
+    return;
+  }
+  const { date } = normalized;
+  pendingStockRefreshDates.add(date);
+  if (activeMenuDateString === date) {
+    fetchMenuStockForDate(date);
+  }
+}
+
+function setupExternalStockSync() {
+  if (stockBroadcastInitialized) {
+    return;
+  }
+  stockBroadcastInitialized = true;
+
+  if (typeof BroadcastChannel === 'function') {
+    try {
+      stockBroadcastChannel = new BroadcastChannel(STOCK_CHANNEL_NAME);
+      stockBroadcastChannel.addEventListener('message', (event) => {
+        handleExternalStockRefreshMessage(event && event.data);
+      });
+    } catch (err) {
+      stockBroadcastChannel = null;
+    }
+  }
+
+  window.addEventListener('storage', (event) => {
+    if (!event) {
+      return;
+    }
+    if (event.key === 'chachor_stock_refresh_signal' && event.newValue) {
+      handleExternalStockRefreshMessage(event.newValue);
+    }
+  });
+
+  window.addEventListener('focus', () => {
+    if (activeMenuDateString && pendingStockRefreshDates.has(activeMenuDateString)) {
+      fetchMenuStockForDate(activeMenuDateString);
+    }
+  });
+
+  try {
+    const latestRaw = localStorage.getItem('chachor_stock_refresh_latest');
+    if (latestRaw) {
+      const normalized = normalizeStockUpdatePayload(latestRaw);
+      if (normalized) {
+        pendingStockRefreshDates.add(normalized.date);
+      }
+    }
+  } catch (err) {
+    // ignore storage access errors
+  }
 }
 
 function filterProductsForMenu(products) {
@@ -977,26 +1067,29 @@ function createProductCard(product) {
   content.append(title, desc, price);
 
   let availabilityState = null;
+  let availabilityLabel = null;
   if (activeMenuDateString) {
     const stockInfo = getActiveMenuStockInfo(product._id);
     if (stockInfo) {
       const totalRemaining = Math.max(0, Number(stockInfo.remaining) || 0);
-      const remainingAfterCart = Math.max(0, totalRemaining - getCartQuantityForProduct(String(product._id)));
       const stockBadge = document.createElement('div');
       stockBadge.classList.add('product-stock-badge');
 
-      if (remainingAfterCart > 10) {
+      if (totalRemaining > 10) {
+        availabilityState = 'plenty';
+        availabilityLabel = '10+';
         stockBadge.textContent = 'Dostępność: 10+';
         stockBadge.classList.add('product-stock-badge--plenty');
-        availabilityState = 'plenty';
-      } else if (remainingAfterCart > 0) {
-        stockBadge.textContent = `Dostępność: ${remainingAfterCart}`;
-        stockBadge.classList.add('product-stock-badge--limited');
+      } else if (totalRemaining > 0) {
         availabilityState = 'limited';
+        availabilityLabel = String(totalRemaining);
+        stockBadge.textContent = `Dostępność: ${totalRemaining}`;
+        stockBadge.classList.add('product-stock-badge--limited');
       } else {
+        availabilityState = 'soldout';
+        availabilityLabel = '0';
         stockBadge.textContent = 'Wyprzedane';
         stockBadge.classList.add('product-stock-badge--soldout');
-        availabilityState = 'soldout';
       }
 
       content.appendChild(stockBadge);
@@ -1124,25 +1217,28 @@ function openProductModal(product) {
   info.appendChild(price);
 
   let modalAvailabilityState = null;
+  let modalAvailabilityLabel = null;
   if (activeMenuDateString) {
     const stockInfo = getActiveMenuStockInfo(product._id);
     if (stockInfo) {
       const totalRemaining = Math.max(0, Number(stockInfo.remaining) || 0);
-      const remainingAfterCart = Math.max(0, totalRemaining - getCartQuantityForProduct(String(product._id)));
       const stockBadge = document.createElement('div');
       stockBadge.classList.add('product-stock-badge');
-      if (remainingAfterCart > 10) {
+      if (totalRemaining > 10) {
+        modalAvailabilityState = 'plenty';
+        modalAvailabilityLabel = '10+';
         stockBadge.textContent = 'Dostępność: 10+';
         stockBadge.classList.add('product-stock-badge--plenty');
-        modalAvailabilityState = 'plenty';
-      } else if (remainingAfterCart > 0) {
-        stockBadge.textContent = `Dostępność: ${remainingAfterCart}`;
-        stockBadge.classList.add('product-stock-badge--limited');
+      } else if (totalRemaining > 0) {
         modalAvailabilityState = 'limited';
+        modalAvailabilityLabel = String(totalRemaining);
+        stockBadge.textContent = `Dostępność: ${totalRemaining}`;
+        stockBadge.classList.add('product-stock-badge--limited');
       } else {
+        modalAvailabilityState = 'soldout';
+        modalAvailabilityLabel = '0';
         stockBadge.textContent = 'Wyprzedane';
         stockBadge.classList.add('product-stock-badge--soldout');
-        modalAvailabilityState = 'soldout';
       }
       info.appendChild(stockBadge);
     }
@@ -1320,6 +1416,8 @@ function initializeStorefront() {
     return;
   }
   storefrontInitialized = true;
+
+  setupExternalStockSync();
 
   if (productGrid) {
     fetchProducts();

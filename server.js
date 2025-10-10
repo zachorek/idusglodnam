@@ -109,10 +109,14 @@ const Product = mongoose.model('Product', new mongoose.Schema({
   }
 }));
 
-const Category = mongoose.model('Category', new mongoose.Schema({
+const CategorySchema = new mongoose.Schema({
   name: { type: String, required: true },
-  order: { type: Number, default: 0 }
-}));
+  order: { type: Number, default: 0 },
+  tileImageData: { type: String, default: '' },
+  tileImageAlt: { type: String, default: '' }
+});
+
+const Category = mongoose.model('Category', CategorySchema);
 
 const daysOfWeek = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela'];
 
@@ -668,6 +672,74 @@ app.delete('/api/categories/:id', async (req, res) => {
     res.json({ message: 'Kategoria usunięta' });
   } catch (err) {
     res.status(500).json({ error: 'Błąd usuwania kategorii' });
+  }
+});
+
+app.put('/api/categories/:id/tile-image', upload.single('tileImage'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({ error: 'Brak identyfikatora kategorii' });
+    }
+    if (req.fileValidationError) {
+      return res.status(400).json({ error: req.fileValidationError });
+    }
+
+    const category = await Category.findById(id);
+    if (!category) {
+      return res.status(404).json({ error: 'Kategoria nie istnieje' });
+    }
+
+    const altRaw = Object.prototype.hasOwnProperty.call(req.body, 'alt') ? String(req.body.alt || '') : undefined;
+    if (!req.file && altRaw === undefined) {
+      return res.status(400).json({ error: 'Brak danych do aktualizacji' });
+    }
+
+    if (req.file) {
+      const base64Image = req.file.buffer.toString('base64');
+      const imageData = `data:${req.file.mimetype};base64,${base64Image}`;
+      category.tileImageData = imageData;
+      if (altRaw === undefined) {
+        category.tileImageAlt = category.tileImageAlt || '';
+      }
+    }
+
+    if (altRaw !== undefined) {
+      category.tileImageAlt = altRaw.trim().slice(0, 180);
+    }
+
+    await category.save();
+    invalidateCategoriesCache();
+
+    res.json({
+      _id: category._id,
+      tileImageData: category.tileImageData,
+      tileImageAlt: category.tileImageAlt
+    });
+  } catch (err) {
+    console.error('Błąd zapisu grafiki kategorii:', err);
+    res.status(500).json({ error: 'Nie udało się zapisać grafiki kategorii' });
+  }
+});
+
+app.delete('/api/categories/:id/tile-image', async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({ error: 'Brak identyfikatora kategorii' });
+    }
+    const category = await Category.findById(id);
+    if (!category) {
+      return res.status(404).json({ error: 'Kategoria nie istnieje' });
+    }
+    category.tileImageData = '';
+    category.tileImageAlt = '';
+    await category.save();
+    invalidateCategoriesCache();
+    res.json({ message: 'Grafika usunięta' });
+  } catch (err) {
+    console.error('Błąd usuwania grafiki kategorii:', err);
+    res.status(500).json({ error: 'Nie udało się usunąć grafiki kategorii' });
   }
 });
 

@@ -43,6 +43,7 @@ let aboutGalleryCache = [];
 if (categoryList) {
   fetchCategories();
   categoryList.addEventListener("click", handleCategoryListClick);
+  categoryList.addEventListener('change', handleCategoryListChange, true);
 }
 
 if (productGrid) {
@@ -857,8 +858,64 @@ function renderCategoryList() {
     wrapper.classList.add('category-item');
     wrapper.dataset.id = category._id;
 
+    const header = document.createElement('div');
+    header.classList.add('category-item__header');
     const nameSpan = document.createElement('span');
     nameSpan.textContent = category.name;
+    header.appendChild(nameSpan);
+
+    const tileControls = document.createElement('div');
+    tileControls.classList.add('category-tile-controls');
+
+    const preview = document.createElement('div');
+    preview.classList.add('category-tile-preview');
+    if (category.tileImageData) {
+      const img = document.createElement('img');
+      img.src = category.tileImageData;
+      img.alt = category.tileImageAlt || category.name || '';
+      preview.appendChild(img);
+    } else {
+      const placeholder = document.createElement('span');
+      placeholder.textContent = 'Brak grafiki';
+      preview.appendChild(placeholder);
+    }
+    tileControls.classList.toggle('category-tile-controls--empty', !category.tileImageData);
+
+    const tileActions = document.createElement('div');
+    tileActions.classList.add('category-tile-actions');
+
+    const uploadLabel = document.createElement('label');
+    uploadLabel.classList.add('category-tile-upload');
+    uploadLabel.textContent = category.tileImageData ? 'Zmień grafikę' : 'Dodaj grafikę';
+
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'image/*';
+    fileInput.dataset.categoryId = category._id;
+    fileInput.classList.add('category-tile-input');
+    uploadLabel.appendChild(fileInput);
+
+    const altInput = document.createElement('input');
+    altInput.type = 'text';
+    altInput.placeholder = 'Opis grafiki (opcjonalnie)';
+    altInput.value = category.tileImageAlt || '';
+    altInput.dataset.categoryId = category._id;
+    altInput.dataset.originalValue = altInput.value;
+    altInput.classList.add('category-tile-alt');
+    altInput.setAttribute('aria-label', `Opis grafiki dla kategorii ${category.name}`);
+
+    tileActions.append(uploadLabel, altInput);
+
+    if (category.tileImageData) {
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.classList.add('category-tile-remove');
+      removeBtn.dataset.id = category._id;
+      removeBtn.textContent = 'Usuń grafikę';
+      tileActions.appendChild(removeBtn);
+    }
+
+    tileControls.append(preview, tileActions);
 
     const actions = document.createElement('div');
     actions.classList.add('category-actions');
@@ -885,7 +942,7 @@ function renderCategoryList() {
     deleteBtn.textContent = 'Usuń';
 
     actions.append(upBtn, downBtn, deleteBtn);
-    wrapper.append(nameSpan, actions);
+    wrapper.append(header, tileControls, actions);
     categoryList.appendChild(wrapper);
   });
 }
@@ -914,6 +971,15 @@ function populateCategorySelect() {
 
 async function handleCategoryListClick(event) {
   const target = event.target;
+
+  if (target.classList.contains('category-tile-remove')) {
+    const id = target.dataset.id;
+    if (!id) {
+      return;
+    }
+    await removeCategoryTileImage(id, target);
+    return;
+  }
 
   if (target.classList.contains('delete-category')) {
     const id = target.dataset.id;
@@ -953,6 +1019,160 @@ async function handleCategoryListClick(event) {
   }
 }
 
+
+async function handleCategoryListChange(event) {
+  const target = event.target;
+  if (!target) {
+    return;
+  }
+
+  if (target.classList.contains('category-tile-input')) {
+    await handleCategoryTileInput(target);
+    return;
+  }
+
+  if (target.classList.contains('category-tile-alt')) {
+    await handleCategoryTileAltChange(target);
+  }
+}
+
+async function handleCategoryTileInput(input) {
+  const categoryId = input.dataset.categoryId;
+  const file = input.files && input.files[0];
+  if (!categoryId || !file) {
+    return;
+  }
+
+  const wrapper = input.closest('.category-item');
+  if (wrapper) {
+    wrapper.classList.add('is-uploading');
+  }
+
+  const altValue = extractAltValue(wrapper);
+
+  try {
+    await uploadCategoryTileImage(categoryId, file, altValue);
+    showCategoryMessage('success', 'Zapisano grafikę kategorii.');
+    await fetchCategories();
+  } catch (err) {
+    console.error('Błąd zapisu grafiki kategorii:', err);
+    showCategoryMessage('error', 'Nie udało się zapisać grafiki kategorii.');
+  } finally {
+    if (wrapper) {
+      wrapper.classList.remove('is-uploading');
+    }
+    input.value = '';
+  }
+}
+
+async function handleCategoryTileAltChange(input) {
+  const categoryId = input.dataset.categoryId;
+  if (!categoryId) {
+    return;
+  }
+
+  const newValue = input.value.trim();
+  const previous = input.dataset.originalValue || '';
+  if (newValue === previous) {
+    return;
+  }
+
+  try {
+    await uploadCategoryTileImage(categoryId, null, newValue);
+    input.dataset.originalValue = newValue;
+    const wrapper = input.closest('.category-item');
+    if (wrapper) {
+      const previewImg = wrapper.querySelector('.category-tile-preview img');
+      if (previewImg) {
+        previewImg.alt = newValue;
+      }
+    }
+    const cacheIndex = categoriesCache.findIndex((category) => category._id === categoryId);
+    if (cacheIndex !== -1) {
+      categoriesCache[cacheIndex] = {
+        ...categoriesCache[cacheIndex],
+        tileImageAlt: newValue
+      };
+    }
+    showCategoryMessage('success', 'Zaktualizowano opis grafiki.');
+  } catch (err) {
+    console.error('Błąd zapisu opisu grafiki kategorii:', err);
+    showCategoryMessage('error', 'Nie udało się zaktualizować opisu grafiki.');
+    input.value = previous;
+  }
+}
+
+async function uploadCategoryTileImage(categoryId, file, altValue) {
+  if (!categoryId) {
+    return;
+  }
+  const formData = new FormData();
+  let hasPayload = false;
+  if (file instanceof File) {
+    formData.append('tileImage', file);
+    hasPayload = true;
+  }
+  if (typeof altValue === 'string') {
+    formData.append('alt', altValue);
+    hasPayload = true;
+  }
+  if (!hasPayload) {
+    return;
+  }
+
+  const res = await fetch(`/api/categories/${categoryId}/tile-image`, {
+    method: 'PUT',
+    body: formData
+  });
+
+  if (!res.ok) {
+    throw new Error('Nie udało się zapisać grafiki');
+  }
+}
+
+async function removeCategoryTileImage(categoryId, button) {
+  if (!categoryId) {
+    return;
+  }
+  if (button) {
+    button.disabled = true;
+  }
+  try {
+    const res = await fetch(`/api/categories/${categoryId}/tile-image`, { method: 'DELETE' });
+    if (!res.ok) {
+      throw new Error('Błąd odpowiedzi serwera');
+    }
+    showCategoryMessage('success', 'Usunięto grafikę kategorii.');
+    await fetchCategories();
+  } catch (err) {
+    console.error('Błąd usuwania grafiki kategorii:', err);
+    showCategoryMessage('error', 'Nie udało się usunąć grafiki kategorii.');
+  } finally {
+    if (button) {
+      button.disabled = false;
+    }
+  }
+}
+
+function extractAltValue(wrapper) {
+  if (!wrapper) {
+    return '';
+  }
+  const altInput = wrapper.querySelector('.category-tile-alt');
+  return altInput ? altInput.value.trim() : '';
+}
+
+function showCategoryMessage(type, message) {
+  if (!categoryMessage) {
+    return;
+  }
+  categoryMessage.textContent = message;
+  categoryMessage.classList.remove('success', 'error');
+  if (type) {
+    categoryMessage.classList.add(type);
+  }
+}
+
 function reorderCategories(fromIndex, toIndex) {
   const updated = categoriesCache.slice();
   const [moved] = updated.splice(fromIndex, 1);
@@ -965,9 +1185,9 @@ function reorderCategories(fromIndex, toIndex) {
 async function persistCategoryOrder() {
   try {
     const res = await fetch('/api/categories/reorder', {
-      method: 'PATCH',
+      method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(categoriesCache.map((category, index) => ({ id: category._id, order: index })))
+      body: JSON.stringify({ order: categoriesCache.map((category) => category._id) })
     });
 
     if (!res.ok) {
@@ -1426,3 +1646,4 @@ async function deleteAboutGalleryImage(imageId) {
     showAboutGalleryMessage('error', message);
   }
 }
+

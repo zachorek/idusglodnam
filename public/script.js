@@ -1,4 +1,6 @@
 const productGrid = document.getElementById('productGrid');
+const categoryTileStrip = document.getElementById('categoryTileStrip');
+const categoryTileList = document.getElementById('categoryTileList');
 const menuPickupDateInput = document.getElementById('menuPickupDate');
 const menuCalendarContainer = document.getElementById('menuCalendarContainer');
 const menuPickupClearButton = document.getElementById('menuPickupClear');
@@ -579,6 +581,70 @@ function filterProductsForMenu(products) {
   });
 }
 
+function getCategoryAnchorId(category) {
+  if (!category) {
+    return '';
+  }
+  const rawName = typeof category === 'string' ? category : category.name || '';
+  const baseSlug = rawName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gi, '-')
+    .replace(/^-+|-+$/g, '');
+  const suffix = typeof category === 'object' && category._id ? String(category._id).slice(-6) : '';
+  const slug = [baseSlug || 'category', suffix].filter(Boolean).join('-');
+  return `category-${slug}`;
+}
+
+function renderCategoryTiles(categories) {
+  if (!categoryTileStrip || !categoryTileList) {
+    return;
+  }
+
+  categoryTileList.innerHTML = '';
+  const tiles = Array.isArray(categories) ? categories.filter((category) => category && category.tileImageData) : [];
+  if (!tiles.length) {
+    categoryTileStrip.classList.add('hidden');
+    return;
+  }
+
+  categoryTileStrip.classList.remove('hidden');
+
+  tiles.forEach((category) => {
+    const anchorId = getCategoryAnchorId(category);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.classList.add('category-tile');
+    const label = category.name || 'Kategoria';
+    button.setAttribute('aria-label', `Przejdź do kategorii ${label}`);
+    button.title = `Przejdź do kategorii ${label}`;
+    button.dataset.anchor = anchorId;
+
+    const image = document.createElement('img');
+    image.src = category.tileImageData;
+    image.alt = category.tileImageAlt || category.name || '';
+    image.classList.add('category-tile__image');
+
+    const overlay = document.createElement('span');
+    overlay.classList.add('category-tile__label');
+    overlay.textContent = category.name || '';
+
+    button.append(image, overlay);
+    button.addEventListener('click', () => scrollToCategory(anchorId));
+    categoryTileList.appendChild(button);
+  });
+}
+
+function scrollToCategory(anchorId) {
+  if (!anchorId) {
+    return;
+  }
+  const target = document.getElementById(anchorId);
+  if (!target) {
+    return;
+  }
+  target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 function buildAvailabilityTiles(days) {
   const data = normalizeAvailabilityDaysForRender(days);
   const tiles = [];
@@ -678,12 +744,17 @@ function renderProductsByCategory(categories, products) {
     if (!items.length) {
       return;
     }
-    fragment.appendChild(createCategorySection(category.name, items));
+    fragment.appendChild(createCategorySection(category.name, items, getCategoryAnchorId(category)));
     appended = true;
   });
+  const categoriesForTiles = categoryList.filter((category) => {
+    const items = categorized.get(category.name) || [];
+    return category && category.tileImageData && items.length;
+  });
+  renderCategoryTiles(categoriesForTiles);
 
   if (uncategorized.length) {
-    fragment.appendChild(createCategorySection('Pozostałe', uncategorized));
+    fragment.appendChild(createCategorySection('Pozostałe', uncategorized, 'category-others'));
     appended = true;
   }
 
@@ -696,9 +767,12 @@ function renderProductsByCategory(categories, products) {
   applyCategoryFadeIn();
 }
 
-function createCategorySection(title, items) {
+function createCategorySection(title, items, anchorId) {
   const section = document.createElement('section');
   section.classList.add('category-group', 'category-group--pending');
+  if (anchorId) {
+    section.id = anchorId;
+  }
 
   const heading = document.createElement('h3');
   heading.classList.add('category-title');
@@ -1067,7 +1141,6 @@ function createProductCard(product) {
   content.append(title, desc, price);
 
   let availabilityState = null;
-  let availabilityLabel = null;
   if (activeMenuDateString) {
     const stockInfo = getActiveMenuStockInfo(product._id);
     if (stockInfo) {
@@ -1077,17 +1150,14 @@ function createProductCard(product) {
 
       if (totalRemaining > 10) {
         availabilityState = 'plenty';
-        availabilityLabel = '10+';
         stockBadge.textContent = 'Dostępność: 10+';
         stockBadge.classList.add('product-stock-badge--plenty');
       } else if (totalRemaining > 0) {
         availabilityState = 'limited';
-        availabilityLabel = String(totalRemaining);
         stockBadge.textContent = `Dostępność: ${totalRemaining}`;
         stockBadge.classList.add('product-stock-badge--limited');
       } else {
         availabilityState = 'soldout';
-        availabilityLabel = '0';
         stockBadge.textContent = 'Wyprzedane';
         stockBadge.classList.add('product-stock-badge--soldout');
       }
@@ -1217,7 +1287,6 @@ function openProductModal(product) {
   info.appendChild(price);
 
   let modalAvailabilityState = null;
-  let modalAvailabilityLabel = null;
   if (activeMenuDateString) {
     const stockInfo = getActiveMenuStockInfo(product._id);
     if (stockInfo) {
@@ -1226,17 +1295,14 @@ function openProductModal(product) {
       stockBadge.classList.add('product-stock-badge');
       if (totalRemaining > 10) {
         modalAvailabilityState = 'plenty';
-        modalAvailabilityLabel = '10+';
         stockBadge.textContent = 'Dostępność: 10+';
         stockBadge.classList.add('product-stock-badge--plenty');
       } else if (totalRemaining > 0) {
         modalAvailabilityState = 'limited';
-        modalAvailabilityLabel = String(totalRemaining);
         stockBadge.textContent = `Dostępność: ${totalRemaining}`;
         stockBadge.classList.add('product-stock-badge--limited');
       } else {
         modalAvailabilityState = 'soldout';
-        modalAvailabilityLabel = '0';
         stockBadge.textContent = 'Wyprzedane';
         stockBadge.classList.add('product-stock-badge--soldout');
       }

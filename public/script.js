@@ -125,6 +125,7 @@ if (menuPickupDateInput && typeof window !== 'undefined' && typeof window.flatpi
     maxDate,
     dateFormat: 'Y-m-d',
     altInput: true,
+    altInputClass: 'order-filter__input',
     altFormat: 'd F Y',
     locale: 'pl',
     inline: true,

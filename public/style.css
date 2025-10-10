@@ -1,76 +1,83 @@
-.order-date-bar {
-  padding: 20px;
-  margin: 0 auto 24px;
-  border-radius: 18px;
-  background: rgba(255, 249, 236, 0.9);
-  border: 1px solid rgba(252, 168, 71, 0.25);
-  max-width: 520px;
+.order-filters {
+  margin: 20px 0 24px;
   display: flex;
-  flex-direction: column;
-  align-items: center;
+  flex-wrap: wrap;
   gap: 16px;
+  justify-content: flex-start;
 }
 
-.order-date-inner {
-  width: 100%;
+.order-filter {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.order-filter__label {
+  font-weight: 600;
+  color: #4f2f1d;
+  font-size: 0.95rem;
+}
+
+.order-filter__control {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-}
-
-.order-date-field {
+  gap: 12px;
   width: 100%;
-  max-width: 320px;
 }
 
-.order-date-field input,
-.order-date-field .flatpickr-input {
-  padding: 12px 16px;
-  border-radius: 14px;
+.order-filter__input,
+.order-filter--date .flatpickr-input {
+  flex: 1 1 220px;
+  min-width: 180px;
+  padding: 10px 14px;
+  border-radius: 12px;
   border: 1px solid rgba(79, 58, 42, 0.25);
   background: #fff;
   font-weight: 600;
   color: #3e2717;
   cursor: pointer;
-  width: 100%;
   box-sizing: border-box;
 }
 
-.order-date-field input:focus,
-.order-date-field .flatpickr-input:focus {
+.order-filter__input:focus,
+.order-filter--date .flatpickr-input:focus {
   outline: 2px solid rgba(252, 168, 71, 0.6);
   outline-offset: 2px;
 }
 
-.order-date-field input::placeholder,
-.order-date-field .flatpickr-input::placeholder {
+.order-filter__input::placeholder,
+.order-filter--date .flatpickr-input::placeholder {
   color: rgba(62, 39, 23, 0.5);
   font-weight: 500;
 }
 
 .order-date-toggle {
-  padding: 10px 18px;
-  border-radius: 14px;
-  border: none;
-  background: linear-gradient(135deg, rgba(252, 168, 71, 0.95), rgba(207, 124, 26, 0.92));
-  color: #fff;
-  font-weight: 700;
+  flex: 0 0 auto;
+  padding: 9px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(252, 168, 71, 0.55);
+  background: rgba(252, 168, 71, 0.18);
+  color: rgba(79, 58, 42, 0.9);
+  font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 12px 24px -14px rgba(252, 168, 71, 0.7);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 }
 
 .order-date-toggle:hover,
-.order-date-toggle:focus-visible {
+.order-date-toggle:focus-visible,
+.order-date-toggle[aria-expanded="true"] {
+  background: rgba(252, 168, 71, 0.28);
+  border-color: rgba(252, 168, 71, 0.75);
+  color: #4f3a2a;
   outline: none;
-  transform: translateY(-1px);
-  box-shadow: 0 18px 30px -18px rgba(207, 124, 26, 0.7);
 }
 
 .order-date-calendar {
   width: 100%;
-  max-width: 320px;
+  margin-top: 10px;
 }
 
 .order-date-calendar[hidden] {
@@ -79,6 +86,25 @@
 
 .order-date-calendar .flatpickr-calendar {
   width: 100%;
+  max-width: 320px;
+  box-shadow: 0 18px 32px -20px rgba(63, 34, 14, 0.35);
+  border-radius: 16px;
+}
+
+@media (max-width: 600px) {
+  .order-filter__control {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .order-date-toggle {
+    width: 100%;
+    text-align: center;
+  }
+
+  .order-date-calendar .flatpickr-calendar {
+    max-width: none;
+  }
 }
 
 #availabilityDate,
@@ -3923,13 +3949,6 @@ body.about-gallery-zoom-open {
   .order-hero-button {
     width: 100%;
   }
-}
-
-/* Flatpickr calendar centering */
-.order-date-bar .flatpickr-calendar {
-  width: auto;
-  max-width: 320px;
-  margin-top: 12px;
 }
 
 /* Host stock management styles */

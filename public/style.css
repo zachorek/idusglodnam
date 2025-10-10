@@ -1,66 +1,10 @@
 .order-date-bar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  background: rgba(255, 249, 236, 0.85);
-  border-radius: 14px;
-  padding: 12px 16px;
-  margin-bottom: 16px;
-}
-
-.order-date-bar__label {
-  font-weight: 600;
-  color: var(--accent-color);
-}
-
-.order-date-bar__text {
-  margin: 0;
-  color: #4f3a2a;
-  font-weight: 500;
-}
-
-.order-date-bar input[type="date"] {
-  padding: 8px 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(0, 0, 0, 0.15);
-  background: #fff;
-}
-
-.order-date-bar input[type="date"]:focus {
-  outline: 2px solid rgba(252, 168, 71, 0.6);
-  outline-offset: 2px;
-}
-
-.order-date-bar__clear {
-  border: none;
-  background: transparent;
-  color: var(--accent-color);
-  font-weight: 600;
-  cursor: pointer;
-  border-radius: 12px;
-  padding: 6px 10px;
-}
-
-.order-date-bar__clear:hover,
-.order-date-bar__clear:focus-visible {
-  background: rgba(252, 168, 71, 0.12);
-}
-
-.order-date-bar__hint {
-  font-size: 0.85rem;
-  color: #7a6b5c;
-}
-
-@media (max-width: 640px) {
-  .order-date-bar {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .order-date-bar__clear {
-    align-self: flex-start;
-  }
+  padding: 20px;
+  margin: 0 auto 24px;
+  border-radius: 18px;
+  background: rgba(255, 249, 236, 0.9);
+  border: 1px solid rgba(252, 168, 71, 0.25);
+  max-width: 520px;
 }
 
 /* Reset stylów */

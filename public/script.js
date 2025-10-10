@@ -1,6 +1,5 @@
 const productGrid = document.getElementById('productGrid');
 const menuPickupDateInput = document.getElementById('menuPickupDate');
-const menuPickupDateClear = document.getElementById('menuPickupDateClear');
 const productModal = document.getElementById('productModal');
 const productModalBody = document.getElementById('productModalBody');
 const productModalClose = productModal ? productModal.querySelector('.modal-close') : null;
@@ -21,7 +20,6 @@ let pageTransitionsInitialized = false;
 
 let lastFocusedElement = null;
 let lastCartActionFocusedElement = null;
-let selectedAvailabilityDayIndex = null;
 let lastLoadedCategories = [];
 let lastLoadedProducts = [];
 
@@ -111,12 +109,22 @@ if (cartActionContinue) {
   cartActionContinue.addEventListener('click', closeCartActionModal);
 }
 
-if (menuPickupDateInput) {
-  menuPickupDateInput.addEventListener('change', handleMenuPickupDateChange);
-}
+if (menuPickupDateInput && typeof window !== 'undefined' && typeof window.flatpickr === 'function') {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
 
-if (menuPickupDateClear) {
-  menuPickupDateClear.addEventListener('click', handleMenuPickupDateClear);
+  const maxDate = new Date();
+  maxDate.setMonth(maxDate.getMonth() + 1);
+
+  window.flatpickr(menuPickupDateInput, {
+    minDate: tomorrow,
+    maxDate,
+    dateFormat: 'Y-m-d',
+    altInput: true,
+    altFormat: 'd F Y',
+    locale: 'pl',
+    inline: true
+  });
 }
 
 if (typeof document !== 'undefined') {
@@ -370,12 +378,7 @@ function renderProductsByCategory(categories, products) {
   });
 
   const uncategorized = [];
-  const filterDay = typeof selectedAvailabilityDayIndex === 'number' ? selectedAvailabilityDayIndex : null;
-
   productList.forEach((product) => {
-    if (!shouldRenderProductForDay(product, filterDay)) {
-      return;
-    }
     const bucket = categorized.get(product.category);
     if (bucket) {
       bucket.push(product);
@@ -405,66 +408,6 @@ function renderProductsByCategory(categories, products) {
 
   productGrid.appendChild(fragment);
   applyCategoryFadeIn();
-}
-
-function shouldRenderProductForDay(product, filterDayIndex) {
-  if (filterDayIndex === null) {
-    return true;
-  }
-  const availability = normalizeAvailabilityDaysForRender(product ? product.availabilityDays : []);
-  if (availability.daily) {
-    return true;
-  }
-  return availability.days.includes(filterDayIndex);
-}
-
-function handleMenuPickupDateChange() {
-  if (!menuPickupDateInput) {
-    return;
-  }
-  selectedAvailabilityDayIndex = deriveAvailabilityDayFromDate(menuPickupDateInput.value);
-  rerenderProductsForCurrentFilter();
-}
-
-function handleMenuPickupDateClear(event) {
-  if (event && typeof event.preventDefault === 'function') {
-    event.preventDefault();
-  }
-  if (menuPickupDateInput) {
-    menuPickupDateInput.value = '';
-  }
-  selectedAvailabilityDayIndex = null;
-  rerenderProductsForCurrentFilter();
-}
-
-function deriveAvailabilityDayFromDate(value) {
-  if (!value) {
-    return null;
-  }
-  const parts = value.split('-').map(Number);
-  if (parts.length !== 3) {
-    return null;
-  }
-  const [year, month, day] = parts;
-  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
-    return null;
-  }
-  const localDate = new Date(year, month - 1, day);
-  if (Number.isNaN(localDate.getTime())) {
-    return null;
-  }
-  const jsDay = localDate.getDay();
-  if (jsDay < 0 || jsDay > 6) {
-    return null;
-  }
-  return JS_DAY_TO_PRODUCT_DAY_INDEX[jsDay] ?? null;
-}
-
-function rerenderProductsForCurrentFilter() {
-  if (!productGrid || !Array.isArray(lastLoadedCategories) || !Array.isArray(lastLoadedProducts)) {
-    return;
-  }
-  renderProductsByCategory(lastLoadedCategories, lastLoadedProducts);
 }
 
 function createCategorySection(title, items) {

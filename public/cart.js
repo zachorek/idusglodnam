@@ -533,13 +533,20 @@ function initializeFlatpickr() {
   const maxDate = new Date();
   maxDate.setMonth(maxDate.getMonth() + 1);
 
+  const baseLocale = (typeof flatpickr !== 'undefined' && flatpickr.l10ns && flatpickr.l10ns.pl)
+    ? flatpickr.l10ns.pl
+    : null;
+  const localeConfig = baseLocale
+    ? { ...baseLocale, firstDayOfWeek: 1 }
+    : { firstDayOfWeek: 1 };
+
   flatpickr(pickupDateInput, {
     minDate: tomorrow,
     maxDate: maxDate,
     dateFormat: "Y-m-d",
     altInput: true,
     altFormat: "d F Y",
-    locale: "pl",
+    locale: localeConfig,
     inline: true,
     onChange: function(selectedDates, dateStr, instance) {
       selectedPickupDate = selectedDates[0] || null;

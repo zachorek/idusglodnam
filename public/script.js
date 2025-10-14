@@ -132,6 +132,11 @@ if (menuPickupDateInput && typeof window !== 'undefined' && typeof window.flatpi
   maxDate.setMonth(maxDate.getMonth() + 1);
   maxDate.setDate(maxDate.getDate() + 1);
 
+  const baseLocale = window.flatpickr && window.flatpickr.l10ns && window.flatpickr.l10ns.pl;
+  const localeConfig = baseLocale
+    ? { ...baseLocale, firstDayOfWeek: 1 }
+    : { firstDayOfWeek: 1 };
+
   menuPickupCalendar = window.flatpickr(menuPickupDateInput, {
     minDate: tomorrow,
     maxDate,
@@ -139,7 +144,7 @@ if (menuPickupDateInput && typeof window !== 'undefined' && typeof window.flatpi
     altInput: true,
     altInputClass: 'order-filter__input',
     altFormat: 'd F Y',
-    locale: 'pl',
+    locale: localeConfig,
     inline: true,
     allowInput: false,
     clickOpens: false,

@@ -193,7 +193,7 @@ function parsePositiveInteger(value, fallback) {
 }
 
 const ORDER_RETENTION_DAYS = parsePositiveInteger(process.env.ORDER_RETENTION_DAYS, 7);
-const ORDER_REPORT_RETENTION_DAYS = parsePositiveInteger(process.env.ORDER_REPORT_RETENTION_DAYS, 2);
+const ORDER_REPORT_RETENTION_DAYS = parsePositiveInteger(process.env.ORDER_REPORT_RETENTION_DAYS, 0);
 const DAILY_ORDERS_EMAIL = process.env.DAILY_ORDERS_EMAIL || 'zamowienia@chachorpiecze.pl';
 const DAILY_ORDERS_CRON = process.env.DAILY_ORDERS_CRON || '1 0 * * *';
 const DAILY_ORDERS_TIMEZONE = process.env.DAILY_ORDERS_TIMEZONE || 'Europe/Warsaw';
@@ -574,6 +574,42 @@ function summarizeOrdersForReport(orders) {
   return totals;
 }
 
+function mapOrderToReportEntry(order, index = 0) {
+  if (!order) {
+    return null;
+  }
+
+  const products = Array.isArray(order.products) ? order.products : [];
+  const mappedProducts = products.map((product) => {
+    const quantity = Number(product && product.quantity) || 0;
+    const price = Number(product && product.price) || 0;
+    return {
+      name: product && typeof product.name === 'string' ? product.name : '',
+      quantity,
+      price,
+      total: Number((price * quantity).toFixed(2))
+    };
+  });
+
+  return {
+    orderId: String(order._id || order.orderId || ''),
+    email: typeof order.email === 'string' ? order.email : '',
+    phone: typeof order.phone === 'string' ? order.phone : '',
+    payment: typeof order.payment === 'string' ? order.payment : '',
+    paymentLabel: describePayment(order.payment),
+    comment: typeof order.comment === 'string' ? order.comment : '',
+    pickupDate: typeof order.pickupDate === 'string' ? order.pickupDate : '',
+    discountCode: typeof order.discountCode === 'string' ? order.discountCode : '',
+    discountPercent: Number(order.discountPercent) || 0,
+    discountAmount: Number(order.discountAmount) || 0,
+    totalBeforeDiscount: Number(order.totalBeforeDiscount) || 0,
+    totalAfterDiscount: Number(order.totalAfterDiscount) || 0,
+    createdAt: order.createdAt ? new Date(order.createdAt) : null,
+    products: mappedProducts,
+    sequenceNumber: Number.isFinite(index) ? index + 1 : null
+  };
+}
+
 function getPaymentReportStatus(order) {
   const raw = order && typeof order.payment === 'string' ? order.payment.trim().toLowerCase() : '';
   switch (raw) {
@@ -765,43 +801,22 @@ async function processDailyOrders(referenceDate = new Date()) {
     const transporter = getMailTransporter();
     const targetEmail = DAILY_ORDERS_EMAIL;
 
-    const reportOrders = orders.map((order, index) => {
-      const products = Array.isArray(order.products) ? order.products : [];
-      const mappedProducts = products.map((product) => {
-        const quantity = Number(product.quantity) || 0;
-        const price = Number(product.price) || 0;
-        return {
-          name: product && typeof product.name === 'string' ? product.name : '',
-          quantity,
-          price,
-          total: Number((price * quantity).toFixed(2))
-        };
-      });
-
-      return {
-        orderId: String(order._id || ''),
-        email: typeof order.email === 'string' ? order.email : '',
-        phone: typeof order.phone === 'string' ? order.phone : '',
-        payment: typeof order.payment === 'string' ? order.payment : '',
-        paymentLabel: describePayment(order.payment),
-        comment: typeof order.comment === 'string' ? order.comment : '',
-        pickupDate: typeof order.pickupDate === 'string' ? order.pickupDate : '',
-        discountCode: typeof order.discountCode === 'string' ? order.discountCode : '',
-        discountPercent: Number(order.discountPercent) || 0,
-        discountAmount: Number(order.discountAmount) || 0,
-        totalBeforeDiscount: Number(order.totalBeforeDiscount) || 0,
-        totalAfterDiscount: Number(order.totalAfterDiscount) || 0,
-        createdAt: order.createdAt ? new Date(order.createdAt) : null,
-        products: mappedProducts,
-        sequenceNumber: index + 1
-      };
-    });
+    const reportOrders = orders
+      .map((order, index) => mapOrderToReportEntry(order, index))
+      .filter(Boolean);
 
     const totals = summarizeOrdersForReport(reportOrders);
+    const pickupDates = reportOrders
+      .map((order) => normalizeDateInput(order.pickupDate))
+      .filter((value) => typeof value === 'string' && value.length === 10);
+    const lastFulfillmentDate = pickupDates.length
+      ? pickupDates.reduce((latest, current) => (current > latest ? current : latest), pickupDates[0])
+      : reportDate;
     const emailPayload = createDailyOrdersEmailPayload(reportDate, reportOrders, totals);
 
     const reportUpdate = {
       collectedAt: new Date(),
+      lastFulfillmentDate,
       sentTo: targetEmail,
       emailSubject: emailPayload.subject,
       orders: reportOrders,
@@ -1638,6 +1653,7 @@ const OrderReport = mongoose.model('OrderReport', new mongoose.Schema({
   emailSubject: { type: String, default: '' },
   emailStatus: { type: String, default: 'pending' },
   failureReason: { type: String, default: '' },
+  lastFulfillmentDate: { type: String, default: '' },
   orders: { type: [orderReportEntrySchema], default: [] },
   totals: {
     ordersCount: { type: Number, default: 0 },
@@ -1787,6 +1803,57 @@ app.get('/api/order-reports/:reportDate', async (req, res) => {
   } catch (err) {
     console.error('❌ Błąd pobierania zestawienia zamówień:', err);
     res.status(500).json({ error: 'Nie udało się pobrać zestawienia zamówień' });
+  }
+});
+
+app.delete('/api/order-reports/:reportDate', async (req, res) => {
+  try {
+    const reportDate = normalizeDateInput(req.params.reportDate);
+    if (!reportDate) {
+      return res.status(400).json({ error: 'Nieprawidłowa data zestawienia' });
+    }
+    const deleted = await OrderReport.findOneAndDelete({ reportDate }).lean();
+    if (!deleted) {
+      return res.status(404).json({ error: 'Nie znaleziono zestawienia do usunięcia' });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error('❌ Błąd usuwania zestawienia zamówień:', err);
+    res.status(500).json({ error: 'Nie udało się usunąć zestawienia zamówień' });
+  }
+});
+
+app.get('/api/orders/pickup/:pickupDate', async (req, res) => {
+  try {
+    const pickupDate = normalizeDateInput(req.params.pickupDate);
+    if (!pickupDate) {
+      return res.status(400).json({ error: 'Nieprawidłowa data odbioru' });
+    }
+
+    const orders = await Order.find({ pickupDate })
+      .sort({ createdAt: 1, _id: 1 })
+      .lean();
+
+    const mappedOrders = orders
+      .map((order, index) => mapOrderToReportEntry(order, index))
+      .filter(Boolean);
+    const totals = summarizeOrdersForReport(mappedOrders);
+    const pickupDates = mappedOrders
+      .map((order) => normalizeDateInput(order.pickupDate))
+      .filter((value) => typeof value === 'string' && value.length === 10);
+    const lastFulfillmentDate = pickupDates.length
+      ? pickupDates.reduce((latest, current) => (current > latest ? current : latest), pickupDates[0])
+      : pickupDate;
+
+    res.json({
+      pickupDate,
+      orders: mappedOrders,
+      totals,
+      lastFulfillmentDate
+    });
+  } catch (err) {
+    console.error('❌ Błąd pobierania zamówień dla wybranej daty odbioru:', err);
+    res.status(500).json({ error: 'Nie udało się pobrać zamówień dla tej daty' });
   }
 });
 

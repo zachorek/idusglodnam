@@ -1,11 +1,16 @@
 const reportsContainer = document.getElementById('orderReportsContainer');
 const reportsMessage = document.getElementById('orderReportsMessage');
+const calendarInput = document.getElementById('ordersDatePicker');
+const calendarMessage = document.getElementById('calendarOrdersMessage');
+const calendarContainer = document.getElementById('calendarOrdersContainer');
 
 const locale = 'pl-PL';
 const currencyFormatter = new Intl.NumberFormat(locale, {
   style: 'currency',
   currency: 'PLN'
 });
+
+const reportsCache = new Map();
 
 function formatCurrency(value) {
   const number = Number(value);
@@ -60,6 +65,49 @@ function formatTime(date) {
     hour: '2-digit',
     minute: '2-digit'
   });
+}
+
+function normalizeDateString(value) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!match) {
+    return null;
+  }
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return `${match[1]}-${match[2]}-${match[3]}`;
+}
+
+function getReportLastFulfillmentDate(report) {
+  if (!report) {
+    return null;
+  }
+  const normalized = normalizeDateString(report.lastFulfillmentDate || report.reportDate);
+  if (normalized) {
+    return normalized;
+  }
+  const pickupDates = (report.orders || [])
+    .map((order) => normalizeDateString(order && typeof order.pickupDate === 'string' ? order.pickupDate : ''))
+    .filter(Boolean);
+  if (!pickupDates.length) {
+    return normalizeDateString(report.reportDate);
+  }
+  return pickupDates.reduce((latest, current) => (current > latest ? current : latest), pickupDates[0]);
+}
+
+function getReportFromCache(date) {
+  if (!date) {
+    return null;
+  }
+  const normalized = normalizeDateString(date);
+  if (!normalized) {
+    return null;
+  }
+  return reportsCache.get(normalized) || null;
 }
 
 function getPaymentStatus(order) {
@@ -198,6 +246,11 @@ function createOrderRow(order) {
 function renderReport(report) {
   const card = document.createElement('article');
   card.className = 'order-report-card';
+  if (report && report.reportDate) {
+    card.dataset.reportDate = report.reportDate;
+  }
+
+  const lastFulfillmentDate = getReportLastFulfillmentDate(report);
 
   const header = document.createElement('header');
   header.className = 'order-report-card__header';
@@ -229,7 +282,8 @@ function renderReport(report) {
   meta.textContent = [
     `Zamówienia: ${report.totals?.ordersCount ?? report.orders?.length ?? 0}`,
     `Łącznie: ${formatCurrency(report.totals?.grandTotal ?? 0)}`,
-    report.sentAt ? `Wysłano: ${formatDateTime(report.sentAt)}` : null
+    report.sentAt ? `Wysłano: ${formatDateTime(report.sentAt)}` : null,
+    lastFulfillmentDate ? `Ostatnia realizacja: ${formatDate(`${lastFulfillmentDate}T00:00:00`)}` : null
   ].filter(Boolean).join(' • ');
   card.appendChild(meta);
 
@@ -268,7 +322,249 @@ function renderReport(report) {
 
   card.appendChild(details);
 
+  const actions = document.createElement('div');
+  actions.className = 'order-report-card__actions';
+
+  const deleteButton = document.createElement('button');
+  deleteButton.type = 'button';
+  deleteButton.className = 'order-report-delete';
+  deleteButton.textContent = 'Usuń raport';
+  deleteButton.addEventListener('click', () => handleDeleteReport(report.reportDate, deleteButton));
+  actions.appendChild(deleteButton);
+
+  card.appendChild(actions);
+
   return card;
+}
+
+async function handleDeleteReport(reportDate, triggerButton) {
+  const normalized = normalizeDateString(reportDate);
+  if (!normalized) {
+    window.alert('Nieprawidłowa data raportu.');
+    return;
+  }
+
+  const formattedDate = formatDate(`${normalized}T00:00:00`) || normalized;
+  const confirmed = window.confirm(`Czy na pewno chcesz usunąć raport z dnia ${formattedDate}?`);
+  if (!confirmed) {
+    return;
+  }
+
+  if (triggerButton) {
+    triggerButton.disabled = true;
+    triggerButton.classList.add('is-loading');
+    triggerButton.textContent = 'Usuwanie...';
+  }
+
+  reportsMessage.textContent = 'Usuwanie raportu...';
+
+  try {
+    const response = await fetch(`/api/order-reports/${normalized}`, { method: 'DELETE' });
+    if (!response.ok) {
+      const { error } = await response.json().catch(() => ({}));
+      throw new Error(error || 'Nie udało się usunąć raportu.');
+    }
+
+    reportsCache.delete(normalized);
+
+    document.querySelectorAll(`.order-report-card[data-report-date="${normalized}"]`).forEach((card) => {
+      if (card && card.parentElement) {
+        card.parentElement.removeChild(card);
+      }
+    });
+
+    if (calendarInput && normalizeDateString(calendarInput.value) === normalized) {
+      calendarContainer.innerHTML = '';
+      calendarMessage.textContent = 'Raport został usunięty. Wybierz inną datę, aby zobaczyć zamówienia.';
+    }
+
+    if (!reportsContainer.children.length) {
+      reportsMessage.textContent = 'Brak dostępnych zestawień.';
+    } else {
+      reportsMessage.textContent = 'Raport został usunięty.';
+      setTimeout(() => {
+        if (reportsMessage.textContent === 'Raport został usunięty.') {
+          reportsMessage.textContent = '';
+        }
+      }, 2500);
+    }
+  } catch (error) {
+    console.error(error);
+    reportsMessage.textContent = error.message || 'Nie udało się usunąć raportu.';
+  } finally {
+    if (triggerButton) {
+      triggerButton.disabled = false;
+      triggerButton.classList.remove('is-loading');
+      triggerButton.textContent = 'Usuń raport';
+    }
+  }
+}
+
+function renderCalendarOrders(reportDate, report) {
+  if (!calendarContainer) {
+    return;
+  }
+
+  calendarContainer.innerHTML = '';
+
+  if (!report || !Array.isArray(report.orders) || !report.orders.length) {
+    const empty = document.createElement('p');
+    empty.className = 'order-calendar-empty';
+    empty.textContent = 'Brak zamówień dla wybranej daty.';
+    calendarContainer.appendChild(empty);
+    return;
+  }
+
+  const normalizedDate = normalizeDateString(reportDate) || report.reportDate;
+  const heading = document.createElement('header');
+  heading.className = 'order-calendar-header';
+
+  const title = document.createElement('h3');
+  title.textContent = `Zamówienia na ${formatDate(`${normalizedDate}T00:00:00`) || normalizedDate}`;
+  heading.appendChild(title);
+
+  const lastFulfillmentDate = getReportLastFulfillmentDate(report);
+  const meta = document.createElement('p');
+  meta.className = 'order-calendar-meta';
+  meta.textContent = [
+    `Łącznie zamówień: ${report.totals?.ordersCount ?? report.orders.length}`,
+    `Suma: ${formatCurrency(report.totals?.grandTotal ?? 0)}`,
+    lastFulfillmentDate ? `Ostatnia realizacja: ${formatDate(`${lastFulfillmentDate}T00:00:00`)}` : null
+  ].filter(Boolean).join(' • ');
+  heading.appendChild(meta);
+
+  calendarContainer.appendChild(heading);
+
+  const ordersWrapper = document.createElement('div');
+  ordersWrapper.className = 'order-calendar-orders';
+
+  report.orders.forEach((order) => {
+    ordersWrapper.appendChild(createOrderRow(order));
+  });
+
+  calendarContainer.appendChild(ordersWrapper);
+}
+
+async function fetchPickupOrders(normalizedDate) {
+  if (!normalizedDate) {
+    return null;
+  }
+
+  const response = await fetch(`/api/orders/pickup/${normalizedDate}`);
+  if (!response.ok) {
+    if (response.status === 404) {
+      return null;
+    }
+    const { error } = await response.json().catch(() => ({}));
+    throw new Error(error || 'Nie udało się pobrać zamówień dla tej daty.');
+  }
+  return response.json();
+}
+
+async function loadReportByDate(date) {
+  const normalized = normalizeDateString(date);
+  if (!normalized) {
+    return null;
+  }
+
+  const cached = getReportFromCache(normalized);
+  if (cached) {
+    return cached;
+  }
+
+  try {
+    const response = await fetch(`/api/order-reports/${normalized}`);
+    if (response.ok) {
+      const report = await response.json();
+      if (report && report.reportDate) {
+        reportsCache.set(report.reportDate, report);
+      }
+      return report;
+    }
+    if (response.status !== 404) {
+      const { error } = await response.json().catch(() => ({}));
+      throw new Error(error || 'Nie udało się pobrać zestawienia zamówień.');
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message && error.message.includes('pobrać zestawienia')) {
+      throw error;
+    }
+    console.error(error);
+  }
+
+  const pickupData = await fetchPickupOrders(normalized);
+  if (pickupData && Array.isArray(pickupData.orders)) {
+    const totals = pickupData.totals || {
+      ordersCount: pickupData.orders.length,
+      grandTotal: pickupData.orders.reduce((sum, order) => sum + (Number(order.totalAfterDiscount) || 0), 0)
+    };
+    totals.grandTotal = Number(totals.grandTotal.toFixed(2));
+
+    return {
+      reportDate: normalized,
+      orders: pickupData.orders,
+      totals,
+      lastFulfillmentDate: pickupData.lastFulfillmentDate || normalized,
+      emailStatus: 'live',
+      source: 'live'
+    };
+  }
+
+  return null;
+}
+
+async function showOrdersForDate(date, { skipInputSync = false, silentIfEmpty = false } = {}) {
+  if (!calendarMessage || !calendarContainer) {
+    return;
+  }
+
+  const normalized = normalizeDateString(date);
+  if (!normalized) {
+    calendarContainer.innerHTML = '';
+    if (!silentIfEmpty) {
+      calendarMessage.textContent = 'Wybierz datę, aby zobaczyć zamówienia.';
+    }
+    return;
+  }
+
+  if (!skipInputSync && calendarInput) {
+    calendarInput.value = normalized;
+  }
+
+  calendarMessage.textContent = 'Ładowanie zamówień...';
+  calendarContainer.innerHTML = '';
+
+  try {
+    const report = await loadReportByDate(normalized);
+    if (!report || !Array.isArray(report.orders) || !report.orders.length) {
+      calendarMessage.textContent = 'Brak zamówień dla wybranej daty.';
+      return;
+    }
+
+    calendarMessage.textContent = '';
+    renderCalendarOrders(normalized, report);
+  } catch (error) {
+    console.error(error);
+    calendarMessage.textContent = 'Nie udało się pobrać zamówień dla wskazanej daty.';
+  }
+}
+
+function initializeCalendar() {
+  if (!calendarInput) {
+    return;
+  }
+
+  calendarMessage.textContent = 'Wybierz datę, aby zobaczyć zamówienia.';
+
+  calendarInput.addEventListener('change', (event) => {
+    showOrdersForDate(event.target.value, { skipInputSync: true });
+  });
+
+  const now = new Date();
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  const todayValue = now.toISOString().slice(0, 10);
+  calendarInput.value = todayValue;
+  showOrdersForDate(todayValue, { skipInputSync: true, silentIfEmpty: true });
 }
 
 async function fetchOrderReports() {
@@ -279,6 +575,7 @@ async function fetchOrderReports() {
       throw new Error('Nie udało się pobrać danych');
     }
     const data = await response.json();
+    reportsCache.clear();
     reportsContainer.innerHTML = '';
 
     if (!Array.isArray(data) || data.length === 0) {
@@ -287,13 +584,23 @@ async function fetchOrderReports() {
     }
 
     data.forEach((report) => {
+      if (report && report.reportDate) {
+        reportsCache.set(report.reportDate, report);
+      }
       reportsContainer.appendChild(renderReport(report));
     });
     reportsMessage.textContent = '';
+
+    if (calendarInput && calendarInput.value) {
+      showOrdersForDate(calendarInput.value, { skipInputSync: true, silentIfEmpty: true });
+    }
   } catch (error) {
     console.error(error);
     reportsMessage.textContent = 'Wystąpił błąd podczas pobierania zestawień zamówień.';
   }
 }
 
-document.addEventListener('DOMContentLoaded', fetchOrderReports);
+document.addEventListener('DOMContentLoaded', () => {
+  fetchOrderReports();
+  initializeCalendar();
+});

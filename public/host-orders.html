@@ -33,10 +33,25 @@
     <section class="glass-panel host-card host-card--wide">
       <div class="panel-heading">
         <h1>Zestawienia zamówień</h1>
-        <p>Codziennie o 00:01 generujemy raport za poprzedni dzień i wysyłamy go na adres zamowienia@chachorpiecze.pl. Raporty są przechowywane w panelu przez 2 dni, a pojedyncze zamówienia zostają usunięte po 7 dniach.</p>
+        <p>Codziennie o 00:01 generujemy raport za poprzedni dzień i wysyłamy go na adres zamowienia@chachorpiecze.pl. Raporty pozostają dostępne do czasu ich ręcznego usunięcia, a pojedyncze zamówienia zostają usunięte po 7 dniach.</p>
       </div>
       <div id="orderReportsMessage" class="host-message" aria-live="polite"></div>
       <div id="orderReportsContainer" class="order-reports-list"></div>
+    </section>
+
+    <section class="glass-panel host-card host-card--wide">
+      <div class="panel-heading">
+        <h2>Przegląd zamówień w kalendarzu</h2>
+        <p>Wybierz dzień w kalendarzu, aby zobaczyć zamówienia przypisane do tej daty odbioru.</p>
+      </div>
+      <div class="host-calendar-controls">
+        <label for="ordersDatePicker" class="host-calendar-label">
+          <span>Data odbioru:</span>
+          <input id="ordersDatePicker" type="date" class="host-calendar-input">
+        </label>
+      </div>
+      <div id="calendarOrdersMessage" class="host-message" aria-live="polite"></div>
+      <div id="calendarOrdersContainer" class="order-calendar-list"></div>
     </section>
   </main>
 

@@ -4104,14 +4104,17 @@ body.about-gallery-zoom-open {
 
 @media (max-width: 600px) {
   .category-tile-strip {
-    padding: 0 12px;
+    padding: 0;
+    margin: 0 0 10px;
   }
   .category-tile-strip__list {
-    justify-content: flex-start;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
   }
   .category-tile {
-    min-height: 160px;
-    width: 160px;
+    width: 100%;
+    min-height: 185px;
   }
 }
 

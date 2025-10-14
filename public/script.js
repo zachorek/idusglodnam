@@ -1376,8 +1376,38 @@ function getCartQuantityForProduct(productId) {
   return item ? Number(item.quantity) || 0 : 0;
 }
 
+function findProductById(productId) {
+  if (!productId) {
+    return null;
+  }
+  const idString = String(productId);
+  if (Array.isArray(lastLoadedProducts) && lastLoadedProducts.length) {
+    const match = lastLoadedProducts.find((product) => String(product._id) === idString);
+    if (match) {
+      return match;
+    }
+  }
+  if (cachedProductsData && Array.isArray(cachedProductsData.products)) {
+    const match = cachedProductsData.products.find((product) => String(product._id) === idString);
+    if (match) {
+      return match;
+    }
+  }
+  return null;
+}
+
+function getProductAvailabilityDays(product) {
+  const normalized = normalizeAvailabilityDaysForRender(product ? product.availabilityDays : undefined);
+  if (normalized.daily) {
+    return PRODUCT_DAY_ABBREVIATIONS.map((_, index) => index);
+  }
+  return normalized.days.slice();
+}
+
 function addToCart(id, price, name) {
   const productId = String(id);
+  const productData = findProductById(productId);
+  const availabilityDays = productData ? getProductAvailabilityDays(productData) : null;
   if (activeMenuDateString) {
     const stockInfo = getActiveMenuStockInfo(productId);
     if (stockInfo) {
@@ -1391,8 +1421,15 @@ function addToCart(id, price, name) {
   const existing = cart.find((item) => item.id === id);
   if (existing) {
     existing.quantity += 1;
+    if ((!Array.isArray(existing.availabilityDays) || !existing.availabilityDays.length) && Array.isArray(availabilityDays)) {
+      existing.availabilityDays = availabilityDays.slice();
+    }
   } else {
-    cart.push({ id, price, name, quantity: 1 });
+    const newItem = { id, price, name, quantity: 1 };
+    if (Array.isArray(availabilityDays)) {
+      newItem.availabilityDays = availabilityDays.slice();
+    }
+    cart.push(newItem);
   }
   saveCart();
   if (activeMenuDateString && activeMenuStockByProductId.size) {

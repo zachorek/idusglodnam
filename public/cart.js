@@ -16,6 +16,8 @@ const discountFeedback = document.getElementById("discountFeedback");
 const pickupDateInput = document.getElementById("pickupDate");
 
 const currencyFormatter = new Intl.NumberFormat('pl-PL', { style: 'currency', currency: 'PLN' });
+const PRODUCT_DAY_LABELS = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela'];
+const PRODUCT_DAY_ABBREVIATIONS = ['PN', 'WT', 'ŚR', 'CZ', 'PT', 'SO', 'ND'];
 
 let availableDiscountCodes = [];
 let activeDiscount = null;
@@ -25,6 +27,91 @@ let lastSummaryTotals = {
   totalAfterDiscount: 0
 };
 let selectedPickupDate = null;
+
+function parseAvailabilityValue(value) {
+  if (Array.isArray(value)) {
+    return value;
+  }
+  if (value && typeof value === 'object') {
+    if (value.daily === true && !Array.isArray(value.days) && !Array.isArray(value.availabilityDays) && !Array.isArray(value.availableDays)) {
+      return PRODUCT_DAY_ABBREVIATIONS.map((_, index) => index);
+    }
+    if (Array.isArray(value.days)) {
+      return value.days;
+    }
+    if (Array.isArray(value.availabilityDays)) {
+      return value.availabilityDays;
+    }
+    if (Array.isArray(value.availableDays)) {
+      return value.availableDays;
+    }
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return [];
+    }
+    if (/^(all|daily|codziennie)$/i.test(trimmed)) {
+      return PRODUCT_DAY_ABBREVIATIONS.map((_, index) => index);
+    }
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch (err) {
+      // ignore parse errors, fallback to comma split
+    }
+    return trimmed.split(',');
+  }
+  if (value === undefined || value === null) {
+    return [];
+  }
+  return [value];
+}
+
+function normalizeAvailabilityDaysForRender(days) {
+  const source = parseAvailabilityValue(days);
+  const normalized = source
+    .map((item) => Number(item))
+    .filter((num) => Number.isInteger(num) && num >= 0 && num < PRODUCT_DAY_ABBREVIATIONS.length);
+  const unique = Array.from(new Set(normalized)).sort((a, b) => a - b);
+  const daily = unique.length === PRODUCT_DAY_ABBREVIATIONS.length;
+  return { daily, days: unique };
+}
+
+function buildCartItemAvailabilityMarkup(item) {
+  if (!item || typeof item !== 'object') {
+    return '';
+  }
+  const availabilitySource = item.availability ?? item.availabilityDays ?? item.availableDays;
+  if (availabilitySource === undefined || availabilitySource === null) {
+    return '';
+  }
+  const availability = normalizeAvailabilityDaysForRender(availabilitySource);
+  if (availability.daily) {
+    const label = 'Dostępne codziennie';
+    return `
+      <div class="cart-item-availability" aria-label="Dni dostępności">
+        <span class="cart-item-availability-badge cart-item-availability-badge--daily" aria-label="${label}" title="${label}">codziennie</span>
+      </div>
+    `.trim();
+  }
+  if (!availability.days.length) {
+    const label = 'Brak określonych dni dostępności';
+    return `
+      <div class="cart-item-availability" aria-label="Dni dostępności">
+        <span class="cart-item-availability-badge cart-item-availability-badge--muted" aria-label="${label}" title="${label}">--</span>
+      </div>
+    `.trim();
+  }
+  const badges = availability.days.map((index) => {
+    const abbr = PRODUCT_DAY_ABBREVIATIONS[index] || '?';
+    const label = PRODUCT_DAY_LABELS[index] ? `Dostępne w ${PRODUCT_DAY_LABELS[index]}` : 'Dostępność nieznana';
+    return `<span class="cart-item-availability-badge" aria-label="${label}" title="${label}">${abbr}</span>`;
+  }).join('');
+  return `<div class="cart-item-availability" aria-label="Dni dostępności">${badges}</div>`;
+}
 
 function formatPickupDateForApi(date) {
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
@@ -348,9 +435,11 @@ function updateCart() {
 
     const card = document.createElement('div');
     card.className = 'cart-item-card';
+    const availabilityMarkup = buildCartItemAvailabilityMarkup(item);
     card.innerHTML = `
       <div class="cart-item-info">
         <span class="cart-item-name">${item.name}</span>
+        ${availabilityMarkup}
         <div class="cart-item-meta">
           <span class="cart-item-price">${formatPrice(unitPrice)} / szt.</span>
           <span class="cart-item-total">${formatPrice(itemTotal)}</span>

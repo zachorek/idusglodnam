@@ -391,6 +391,8 @@ function createOrderEmailContent(order) {
   const discountPercent = Number(safeOrder.discountPercent) || 0;
   const discountAmount = Number(safeOrder.discountAmount) || 0;
 
+  const pickupDateDisplay = pickupDate ? formatDateForDisplay(`${pickupDate}T00:00:00`) : '';
+
   const summaryLines = [
     'Dzień dobry,',
     '',
@@ -418,7 +420,7 @@ function createOrderEmailContent(order) {
     summaryLines.push(`Forma płatności: ${paymentLabel}`);
   }
   if (pickupDate) {
-    summaryLines.push(`Data odbioru: ${pickupDate}`);
+    summaryLines.push(`Data odbioru: ${pickupDateDisplay || pickupDate}`);
   }
   if (comment) {
     summaryLines.push('');
@@ -434,40 +436,150 @@ function createOrderEmailContent(order) {
     const name = escapeHtml(product && product.name ? product.name : 'Produkt');
     const quantity = Number(product && product.quantity) || 0;
     const price = Number(product && product.price) || 0;
-    return `<tr><td style="padding:4px 8px;border:1px solid #ddd;">${name}</td><td style="padding:4px 8px;border:1px solid #ddd;">${quantity}</td><td style="padding:4px 8px;border:1px solid #ddd;">${formatPrice(price * quantity)}</td></tr>`;
+    return `
+              <tr>
+                <td>${name}</td>
+                <td>${quantity}</td>
+                <td>${formatPrice(price * quantity)}</td>
+              </tr>
+            `;
   }).join('');
 
-  const commentHtml = comment
-    ? `<p style="margin-top:16px;"><strong>Komentarz do zamówienia:</strong><br>${escapeHtml(comment).replace(/\r?\n/g, '<br>')}</p>`
+  const productsTableHtml = products.length ? `
+          <table class="products-table" role="presentation" cellpadding="0" cellspacing="0">
+            <thead>
+              <tr>
+                <th scope="col">Produkt</th>
+                <th scope="col">Ilość</th>
+                <th scope="col">Kwota</th>
+              </tr>
+            </thead>
+            <tbody>
+${productRows.trim()}
+            </tbody>
+          </table>
+        ` : `
+          <p class="products-empty">Brak zamówionych produktów.</p>
+        `;
+
+  const discountRowHtml = discountPercent > 0
+    ? `
+          <div class="summary-row">
+            <strong>Rabat (${discountPercent}%):&nbsp;</strong>
+            <span class="summary-value">-${formatPrice(discountAmount)}</span>
+          </div>
+        `
     : '';
 
-  const html = `
-    <div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#333;">
-      <p>Dzień dobry,</p>
-      <p>Potwierdzamy otrzymanie zamówienia w Chachor Piecze.</p>
-      ${products.length ? `
-        <p><strong>Zamówione produkty:</strong></p>
-        <table style="border-collapse:collapse;width:100%;max-width:480px;">
-          <thead>
-            <tr>
-              <th align="left" style="padding:4px 8px;border:1px solid #ddd;">Produkt</th>
-              <th align="left" style="padding:4px 8px;border:1px solid #ddd;">Ilość</th>
-              <th align="left" style="padding:4px 8px;border:1px solid #ddd;">Kwota</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${productRows}
-          </tbody>
-        </table>
-      ` : ''}
-      ${discountPercent > 0 ? `<p><strong>Rabat (${discountPercent}%):</strong> -${formatPrice(discountAmount)}</p>` : ''}
-      <p><strong>Do zapłaty:</strong> ${formatPrice(safeOrder.totalAfterDiscount)}</p>
-      ${paymentLabel ? `<p><strong>Forma płatności:</strong> ${escapeHtml(paymentLabel)}</p>` : ''}
-      ${pickupDate ? `<p><strong>Data odbioru:</strong> ${escapeHtml(pickupDate)}</p>` : ''}
-      ${commentHtml}
-      <p style="margin-top:16px;">Do zobaczenia w piekarni!</p>
+  const commentBlockHtml = comment
+    ? `
+          <div class="summary-row summary-row--comment">
+            <strong>Komentarz do zamówienia:&nbsp;</strong>
+            <span class="summary-value">${escapeHtml(comment).replace(/\r?\n/g, '<br>')}</span>
+          </div>
+        `
+    : '';
+
+  const assetsBaseUrl = (process.env.EMAIL_ASSETS_BASE_URL || process.env.APP_PUBLIC_URL || '').replace(/\/$/, '');
+  const logoUrl = process.env.EMAIL_LOGO_URL || (assetsBaseUrl ? `${assetsBaseUrl}/images/logo.png` : '');
+
+  const brandLogoHtml = logoUrl
+    ? `<img src="${escapeHtml(logoUrl)}" alt="Chachor Piecze" class="brand-logo" width="160" style="max-width: 160px; height: auto; display: block; margin: 0 auto 10px;" />`
+    : `<div class="brand-name">Chachor Piecze</div>`;
+
+  const html = `<!DOCTYPE html>
+  <html lang="pl">
+  <head>
+    <meta charset="UTF-8">
+    <title>Potwierdzenie zamówienia – Chachor Piecze</title>
+    <style>
+      :root { color-scheme: light; }
+      * { box-sizing: border-box; font-family: 'Segoe UI', Arial, sans-serif; }
+      body { margin: 0; padding: 0; background: #fdf5eb; color: #3c2a1e; }
+      .email-wrapper { width: 100%; padding: 24px 12px; background: #fdf5eb; }
+      .email-container { max-width: 640px; margin: 0 auto; background: #ffffff; border-radius: 22px; padding: 32px 28px; box-shadow: 0 24px 48px rgba(92, 67, 45, 0.18); }
+      .brand-hero { text-align: center; margin-bottom: 28px; padding: 28px 18px 24px; background: linear-gradient(135deg, rgba(252, 224, 184, 0.4), rgba(210, 176, 146, 0.25)); border-radius: 18px; border: 1px solid rgba(136, 94, 61, 0.12); }
+      .brand-logo { max-width: 180px; height: auto; display: block; margin: 0 auto 12px; }
+      .brand-name { font-size: 1.9rem; letter-spacing: 0.08em; text-transform: uppercase; color: #6d3d23; margin: 0 0 6px; }
+      .brand-subtitle { margin: 6px 0 0; font-size: 0.95rem; color: rgba(96, 67, 43, 0.78); }
+      p { line-height: 1.6; margin: 12px 0; }
+      .intro { font-size: 1rem; color: rgba(60, 42, 30, 0.92); }
+      .products-section { margin: 28px 0; }
+      .products-table { width: 100%; border-collapse: collapse; background: #fffaf3; border-radius: 16px; overflow: hidden; border: 1px solid rgba(109, 61, 35, 0.18); }
+      .products-table thead { background: linear-gradient(135deg, #f3d9bf, #e7c3a1); color: #4a2d1c; }
+      .products-table th, .products-table td { padding: 14px 16px; text-align: left; font-size: 0.95rem; border-bottom: 1px solid rgba(109, 61, 35, 0.12); }
+      .products-table th { text-transform: uppercase; font-size: 0.8rem; letter-spacing: 0.05em; }
+      .products-table tr:last-child td { border-bottom: none; }
+      .products-empty { margin: 0; padding: 18px; border-radius: 16px; background: rgba(255, 255, 255, 0.86); border: 1px dashed rgba(109, 61, 35, 0.28); text-align: center; color: rgba(60, 42, 30, 0.75); font-weight: 600; }
+      .summary-card { margin: 24px 0; padding: 22px 24px; border-radius: 18px; background: linear-gradient(135deg, rgba(248, 231, 211, 0.88), rgba(240, 211, 181, 0.85)); border: 1px solid rgba(109, 61, 35, 0.2); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45); }
+      .summary-row { display: flex; justify-content: space-between; align-items: baseline; margin: 12px 0; font-size: 1rem; gap: 12px; }
+      .summary-row strong { color: #4a2d1c; }
+      .summary-value { flex: 1; color: #3c2a1e; text-align: right; }
+      .summary-row--comment { align-items: baseline; }
+      .summary-row--comment .summary-value,
+      .summary-row--link .summary-value { text-align: left; }
+      .summary-link { color: #4a2d1c; text-decoration: none; font-weight: 600; }
+      .summary-link:focus, .summary-link:hover { text-decoration: underline; }
+      .summary-row--spaced { margin-bottom: 18px; }
+      .total-amount { font-size: 1rem; font-weight: 600; color: #4a2d1c; display: inline-block; }
+      .closing { margin-top: 24px; font-weight: 600; color: rgba(60, 42, 30, 0.85); }
+      .footer-note { margin-top: 32px; font-size: 0.85rem; text-align: center; color: rgba(96, 67, 43, 0.75); }
+      @media (max-width: 600px) {
+        .email-container { padding: 26px 18px; border-radius: 18px; }
+        .brand-hero { padding: 24px 16px 22px; }
+        .summary-row { flex-direction: column; align-items: flex-start; margin: 10px 0; }
+        .products-table th, .products-table td { padding: 12px; }
+        .total-amount { font-size: 1rem; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="email-wrapper">
+      <div class="email-container">
+        <header class="brand-hero">
+          ${brandLogoHtml}
+          <p class="brand-subtitle">Świeże wypieki każdego dnia</p>
+        </header>
+        <main>
+          <p class="intro">Dzień dobry,</p>
+          <p class="intro">Potwierdzamy otrzymanie zamówienia w Chachor Piecze.</p>
+          <section class="products-section">
+            <h2 class="section-title" style="font-size:1.1rem;font-weight:600;margin:0 0 12px;color:#6d3d23;">Zamówione produkty</h2>
+${productsTableHtml.trim()}
+          </section>
+          <section class="summary-card">
+${discountRowHtml.trim()}
+            <div class="summary-row summary-row--spaced">
+              <strong>Do zapłaty:&nbsp;</strong>
+              <span class="summary-value total-amount">${formatPrice(safeOrder.totalAfterDiscount)}</span>
+            </div>
+${paymentLabel ? `
+            <div class="summary-row">
+              <strong>Forma płatności:&nbsp;</strong>
+              <span class="summary-value">${escapeHtml(paymentLabel)}</span>
+            </div>
+` : ''}
+${pickupDate ? `
+            <div class="summary-row">
+              <strong>Data odbioru:&nbsp;</strong>
+              <span class="summary-value">${escapeHtml(pickupDateDisplay || pickupDate)}</span>
+            </div>
+` : ''}
+            <div class="summary-row summary-row--link">
+              <strong>Godziny odbioru:&nbsp;</strong>
+              <span class="summary-value"><a class="summary-link" href="https://chachorpiecze.pl/accessibility" target="_blank" rel="noopener noreferrer">Sprawdź od której możesz odebrać zamówienie</a></span>
+            </div>
+${commentBlockHtml.trim()}
+          </section>
+          <p class="closing">Do zobaczenia w piekarni!</p>
+        </main>
+        <footer class="footer-note">
+          Dziękujemy za zamówienie w Chachor Piecze ❤️
+        </footer>
+      </div>
     </div>
-  `;
+  </body>
+  </html>`;
 
   return { text, html };
 }

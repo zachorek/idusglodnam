@@ -14,6 +14,7 @@ const applyDiscountButton = document.getElementById("applyDiscountButton");
 const removeDiscountButton = document.getElementById("removeDiscountButton");
 const discountFeedback = document.getElementById("discountFeedback");
 const pickupDateInput = document.getElementById("pickupDate");
+const pickupAvailabilityNotice = document.getElementById("pickupAvailabilityNotice");
 
 const currencyFormatter = new Intl.NumberFormat('pl-PL', { style: 'currency', currency: 'PLN' });
 const PRODUCT_DAY_LABELS = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela'];
@@ -80,15 +81,22 @@ function normalizeAvailabilityDaysForRender(days) {
   return { daily, days: unique };
 }
 
-function buildCartItemAvailabilityMarkup(item) {
+function normalizeCartItemAvailability(item) {
   if (!item || typeof item !== 'object') {
-    return '';
+    return null;
   }
   const availabilitySource = item.availability ?? item.availabilityDays ?? item.availableDays;
   if (availabilitySource === undefined || availabilitySource === null) {
+    return null;
+  }
+  return normalizeAvailabilityDaysForRender(availabilitySource);
+}
+
+function buildCartItemAvailabilityMarkup(item) {
+  const availability = normalizeCartItemAvailability(item);
+  if (!availability) {
     return '';
   }
-  const availability = normalizeAvailabilityDaysForRender(availabilitySource);
   if (availability.daily) {
     const label = 'Dostępne codziennie';
     return `
@@ -111,6 +119,67 @@ function buildCartItemAvailabilityMarkup(item) {
     return `<span class="cart-item-availability-badge" aria-label="${label}" title="${label}">${abbr}</span>`;
   }).join('');
   return `<div class="cart-item-availability" aria-label="Dni dostępności">${badges}</div>`;
+}
+
+function formatUnavailableProductsMessage(names) {
+  if (!Array.isArray(names) || !names.length) {
+    return '';
+  }
+  const uniqueNames = Array.from(new Set(names.filter((name) => typeof name === 'string' && name.trim())));
+  if (!uniqueNames.length) {
+    return '';
+  }
+  const highlighted = uniqueNames.map((name) => `„${name.trim()}”`);
+  const list = highlighted.join(', ');
+  if (uniqueNames.length === 1) {
+    return `Produkt ${list} nie jest dostępny w wybranym dniu odbioru. Wybierz inny termin lub usuń go z koszyka.`;
+  }
+  return `Produkty ${list} nie są dostępne w wybranym dniu odbioru. Wybierz inny termin lub usuń te pozycje z koszyka.`;
+}
+
+function renderPickupAvailabilityNotice(productNames) {
+  if (!pickupAvailabilityNotice) {
+    return;
+  }
+  pickupAvailabilityNotice.classList.remove('cart-availability-notice--visible', 'cart-availability-notice--warning');
+  pickupAvailabilityNotice.textContent = '';
+  pickupAvailabilityNotice.setAttribute('aria-hidden', 'true');
+
+  const message = formatUnavailableProductsMessage(productNames);
+  if (!message) {
+    return;
+  }
+
+  pickupAvailabilityNotice.textContent = message;
+  pickupAvailabilityNotice.classList.add('cart-availability-notice--visible', 'cart-availability-notice--warning');
+  pickupAvailabilityNotice.setAttribute('aria-hidden', 'false');
+}
+
+function getUnavailableCartProductNamesForDate(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    return [];
+  }
+  const dayIndex = (date.getDay() + 6) % 7;
+  const names = [];
+  cart.forEach((item) => {
+    const availability = normalizeCartItemAvailability(item);
+    if (!availability) {
+      return;
+    }
+    if (availability.daily || !Array.isArray(availability.days) || !availability.days.length) {
+      return;
+    }
+    if (!availability.days.includes(dayIndex) && item && typeof item.name === 'string') {
+      names.push(item.name);
+    }
+  });
+  return names;
+}
+
+function evaluatePickupAvailability(date) {
+  const unavailable = getUnavailableCartProductNamesForDate(date);
+  renderPickupAvailabilityNotice(unavailable);
+  return unavailable;
 }
 
 function formatPickupDateForApi(date) {
@@ -459,6 +528,7 @@ function updateCart() {
   });
 
   updateSummaryTotals(total);
+  evaluatePickupAvailability(selectedPickupDate);
 }
 
 // Zmiana ilości produktu
@@ -508,6 +578,14 @@ if (orderForm) {
     const pickupDateStr = formatPickupDateForApi(selectedPickupDate);
     if (!pickupDateStr) {
       showOrderMessage('error', 'Wybierz prawidłową datę odbioru.');
+      return;
+    }
+    const unavailableForDate = evaluatePickupAvailability(selectedPickupDate);
+    if (unavailableForDate.length) {
+      const warningMessage = formatUnavailableProductsMessage(unavailableForDate);
+      if (warningMessage) {
+        showOrderMessage('error', warningMessage);
+      }
       return;
     }
     const pickupDayIndex = (selectedPickupDate.getDay() + 6) % 7;
@@ -639,6 +717,9 @@ function initializeFlatpickr() {
     inline: true,
     onChange: function(selectedDates, dateStr, instance) {
       selectedPickupDate = selectedDates[0] || null;
+      evaluatePickupAvailability(selectedPickupDate);
     }
   });
+
+  evaluatePickupAvailability(selectedPickupDate);
 }

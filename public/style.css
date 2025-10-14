@@ -2489,6 +2489,29 @@ body.about-gallery-zoom-open {
   margin: 2px 0 6px;
 }
 
+.cart-availability-notice {
+  display: none;
+  margin-top: 12px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  background: rgba(174, 67, 55, 0.12);
+  border: 1px solid rgba(174, 67, 55, 0.28);
+  color: #8f3d2f;
+  box-shadow: inset 0 0 0 1px rgba(174, 67, 55, 0.1);
+}
+
+.cart-availability-notice--visible {
+  display: block;
+}
+
+.cart-availability-notice--warning {
+  background: rgba(174, 67, 55, 0.16);
+  border-color: rgba(174, 67, 55, 0.38);
+  box-shadow: 0 8px 22px rgba(174, 67, 55, 0.18);
+}
+
 .cart-item-availability-badge {
   display: inline-flex;
   align-items: center;

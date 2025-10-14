@@ -3,6 +3,8 @@ const mongoose = require('mongoose');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
+const nodemailer = require('nodemailer');
+const cron = require('node-cron');
 require('dotenv').config();
 
 const app = express();
@@ -28,7 +30,12 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Połączenie z MongoDB Atlas
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('✅ Połączono z MongoDB'))
+  .then(() => {
+    console.log('✅ Połączono z MongoDB');
+    purgeOldOrders();
+    purgeOldOrderReports();
+    startDailyOrderSummaryJob();
+  })
   .catch(err => console.error('❌ Błąd połączenia z MongoDB:', err));
 
 // MODELE
@@ -177,6 +184,22 @@ let cachedCategories = null;
 let cachedCategoriesFetchedAt = 0;
 const CACHE_TTL_MS = 30 * 1000;
 
+function parsePositiveInteger(value, fallback) {
+  const number = Number(value);
+  if (Number.isInteger(number) && number > 0) {
+    return number;
+  }
+  return fallback;
+}
+
+const ORDER_RETENTION_DAYS = parsePositiveInteger(process.env.ORDER_RETENTION_DAYS, 7);
+const ORDER_REPORT_RETENTION_DAYS = parsePositiveInteger(process.env.ORDER_REPORT_RETENTION_DAYS, 2);
+const DAILY_ORDERS_EMAIL = process.env.DAILY_ORDERS_EMAIL || 'zamowienia@chachorpiecze.pl';
+const DAILY_ORDERS_CRON = process.env.DAILY_ORDERS_CRON || '1 0 * * *';
+const DAILY_ORDERS_TIMEZONE = process.env.DAILY_ORDERS_TIMEZONE || 'Europe/Warsaw';
+const DAILY_ORDERS_ENABLED = String(process.env.DAILY_ORDERS_ENABLED || 'true').toLowerCase() !== 'false';
+const DEFAULT_LOCALE = process.env.APP_LOCALE || 'pl-PL';
+
 function getCachedValue(cacheRef, timestampRef) {
   if (!cacheRef) {
     return null;
@@ -197,6 +220,656 @@ function setCategoriesCache(data) {
   cachedCategoriesFetchedAt = Date.now();
 }
 
+let mailTransporter = null;
+let mailTransporterInitAttempted = false;
+
+const MAIL_PROVIDER_PRESETS = {
+  gmail: { service: 'gmail', secure: true },
+  outlook: { host: 'smtp.office365.com', port: 587, secure: false, requireTLS: true },
+  office365: { host: 'smtp.office365.com', port: 587, secure: false, requireTLS: true },
+  hotmail: { host: 'smtp-mail.outlook.com', port: 587, secure: false, requireTLS: true },
+  live: { host: 'smtp-mail.outlook.com', port: 587, secure: false, requireTLS: true },
+  yahoo: { service: 'yahoo', secure: true },
+  forpsi: { host: 'smtp.forpsi.com', port: 587, secure: false, requireTLS: true }
+};
+
+function resolveMailTransportConfig(authUser, authPass) {
+  const transportConfig = {
+    auth: {
+      user: authUser,
+      pass: authPass
+    }
+  };
+
+  const provider = (process.env.MAIL_PROVIDER || '').toLowerCase();
+  if (provider && MAIL_PROVIDER_PRESETS[provider]) {
+    Object.assign(transportConfig, MAIL_PROVIDER_PRESETS[provider]);
+  }
+
+  const service = process.env.MAIL_SERVICE;
+  if (service) {
+    transportConfig.service = service;
+  }
+
+  const host = process.env.MAIL_HOST;
+  if (host) {
+    transportConfig.host = host;
+    delete transportConfig.service;
+  }
+
+  const port = process.env.MAIL_PORT;
+  if (port) {
+    const parsedPort = Number(port);
+    if (!Number.isNaN(parsedPort)) {
+      transportConfig.port = parsedPort;
+    }
+  }
+
+  const secureEnv = process.env.MAIL_SECURE;
+  if (secureEnv !== undefined) {
+    transportConfig.secure = /^true|1$/i.test(secureEnv);
+  } else if (!transportConfig.service && transportConfig.port === undefined && transportConfig.secure === undefined) {
+    transportConfig.secure = true;
+  }
+
+  const requireTls = process.env.MAIL_REQUIRE_TLS;
+  if (requireTls !== undefined) {
+    transportConfig.requireTLS = /^true|1$/i.test(requireTls);
+  }
+
+  const rejectUnauthorized = process.env.MAIL_TLS_REJECT_UNAUTHORIZED;
+  if (rejectUnauthorized !== undefined) {
+    transportConfig.tls = {
+      ...(transportConfig.tls || {}),
+      rejectUnauthorized: !/^false|0$/i.test(rejectUnauthorized)
+    };
+  }
+
+  const tlsMinVersion = process.env.MAIL_TLS_MIN_VERSION;
+  if (tlsMinVersion) {
+    transportConfig.tls = {
+      ...(transportConfig.tls || {}),
+      minVersion: tlsMinVersion
+    };
+  }
+
+  if (!transportConfig.service && !transportConfig.host) {
+    Object.assign(transportConfig, MAIL_PROVIDER_PRESETS.gmail);
+  }
+
+  const authMethod = process.env.MAIL_AUTH_METHOD;
+  if (authMethod) {
+    transportConfig.authMethod = authMethod;
+  }
+
+  const authType = process.env.MAIL_AUTH_TYPE;
+  if (authType) {
+    transportConfig.auth = {
+      ...(transportConfig.auth || {}),
+      type: authType
+    };
+  }
+
+  const ignoreTls = process.env.MAIL_IGNORE_TLS;
+  if (ignoreTls !== undefined) {
+    transportConfig.ignoreTLS = /^true|1$/i.test(ignoreTls);
+  }
+
+  return transportConfig;
+}
+
+function getMailTransporter() {
+  if (mailTransporterInitAttempted) {
+    return mailTransporter;
+  }
+  mailTransporterInitAttempted = true;
+
+  const authUser = process.env.MAIL_USER || process.env.MAIL_USERNAME;
+  const authPass = process.env.MAIL_PASSWORD || process.env.MAIL_PASS;
+  if (!authUser || !authPass) {
+    console.warn('⚠️ Mailing disabled: missing MAIL_USER/MAIL_PASSWORD environment variables.');
+    return null;
+  }
+
+  const transportConfig = resolveMailTransportConfig(authUser, authPass);
+
+  try {
+    mailTransporter = nodemailer.createTransport(transportConfig);
+  } catch (err) {
+    console.error('❌ Błąd konfiguracji systemu mailowego:', err);
+    mailTransporter = null;
+  }
+
+  return mailTransporter;
+}
+
+function formatPrice(value) {
+  const number = Number(value);
+  return `${Number.isFinite(number) ? number.toFixed(2) : '0.00'} zł`;
+}
+
+function escapeHtml(value) {
+  return String(value || '').replace(/[&<>"']/g, (char) => {
+    switch (char) {
+      case '&':
+        return '&amp;';
+      case '<':
+        return '&lt;';
+      case '>':
+        return '&gt;';
+      case '"':
+        return '&quot;';
+      case "'":
+        return '&#39;';
+      default:
+        return char;
+    }
+  });
+}
+
+function describePayment(value) {
+  const normalized = typeof value === 'string' ? value.trim() : '';
+  if (!normalized) {
+    return '';
+  }
+  switch (normalized.toLowerCase()) {
+    case 'place':
+      return 'Płatność na miejscu';
+    case 'online':
+      return 'Płatność przez internet';
+    default:
+      return normalized;
+  }
+}
+
+function createOrderEmailContent(order) {
+  const safeOrder = order || {};
+  const products = Array.isArray(safeOrder.products) ? safeOrder.products : [];
+  const pickupDate = typeof safeOrder.pickupDate === 'string' ? safeOrder.pickupDate : '';
+  const payment = typeof safeOrder.payment === 'string' ? safeOrder.payment : '';
+  const comment = typeof safeOrder.comment === 'string' ? safeOrder.comment : '';
+  const discountPercent = Number(safeOrder.discountPercent) || 0;
+  const discountAmount = Number(safeOrder.discountAmount) || 0;
+
+  const summaryLines = [
+    'Dzień dobry,',
+    '',
+    'Potwierdzamy otrzymanie zamówienia w Chachor Piecze.',
+    ''
+  ];
+
+  if (products.length) {
+    summaryLines.push('Zamówione produkty:');
+    products.forEach((product) => {
+      const name = product && product.name ? product.name : 'Produkt';
+      const quantity = Number(product && product.quantity) || 0;
+      const price = Number(product && product.price) || 0;
+      summaryLines.push(`- ${name} x${quantity} — ${formatPrice(price * quantity)}`);
+    });
+    summaryLines.push('');
+  }
+
+  if (discountPercent > 0) {
+    summaryLines.push(`Rabat (${discountPercent}%): -${formatPrice(discountAmount)}`);
+  }
+  summaryLines.push(`Do zapłaty: ${formatPrice(safeOrder.totalAfterDiscount)}`);
+  const paymentLabel = describePayment(payment);
+  if (paymentLabel) {
+    summaryLines.push(`Forma płatności: ${paymentLabel}`);
+  }
+  if (pickupDate) {
+    summaryLines.push(`Data odbioru: ${pickupDate}`);
+  }
+  if (comment) {
+    summaryLines.push('');
+    summaryLines.push('Komentarz do zamówienia:');
+    summaryLines.push(comment);
+  }
+  summaryLines.push('');
+  summaryLines.push('Do zobaczenia w piekarni!');
+
+  const text = summaryLines.join('\n');
+
+  const productRows = products.map((product) => {
+    const name = escapeHtml(product && product.name ? product.name : 'Produkt');
+    const quantity = Number(product && product.quantity) || 0;
+    const price = Number(product && product.price) || 0;
+    return `<tr><td style="padding:4px 8px;border:1px solid #ddd;">${name}</td><td style="padding:4px 8px;border:1px solid #ddd;">${quantity}</td><td style="padding:4px 8px;border:1px solid #ddd;">${formatPrice(price * quantity)}</td></tr>`;
+  }).join('');
+
+  const commentHtml = comment
+    ? `<p style="margin-top:16px;"><strong>Komentarz do zamówienia:</strong><br>${escapeHtml(comment).replace(/\r?\n/g, '<br>')}</p>`
+    : '';
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5;color:#333;">
+      <p>Dzień dobry,</p>
+      <p>Potwierdzamy otrzymanie zamówienia w Chachor Piecze.</p>
+      ${products.length ? `
+        <p><strong>Zamówione produkty:</strong></p>
+        <table style="border-collapse:collapse;width:100%;max-width:480px;">
+          <thead>
+            <tr>
+              <th align="left" style="padding:4px 8px;border:1px solid #ddd;">Produkt</th>
+              <th align="left" style="padding:4px 8px;border:1px solid #ddd;">Ilość</th>
+              <th align="left" style="padding:4px 8px;border:1px solid #ddd;">Kwota</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${productRows}
+          </tbody>
+        </table>
+      ` : ''}
+      ${discountPercent > 0 ? `<p><strong>Rabat (${discountPercent}%):</strong> -${formatPrice(discountAmount)}</p>` : ''}
+      <p><strong>Do zapłaty:</strong> ${formatPrice(safeOrder.totalAfterDiscount)}</p>
+      ${paymentLabel ? `<p><strong>Forma płatności:</strong> ${escapeHtml(paymentLabel)}</p>` : ''}
+      ${pickupDate ? `<p><strong>Data odbioru:</strong> ${escapeHtml(pickupDate)}</p>` : ''}
+      ${commentHtml}
+      <p style="margin-top:16px;">Do zobaczenia w piekarni!</p>
+    </div>
+  `;
+
+  return { text, html };
+}
+
+async function sendOrderConfirmationEmail(order) {
+  const transporter = getMailTransporter();
+  if (!transporter) {
+    return;
+  }
+
+  const recipient = order && typeof order.email === 'string' ? order.email.trim() : '';
+  if (!recipient) {
+    return;
+  }
+
+  const fromAddress = process.env.MAIL_FROM || process.env.MAIL_USER || process.env.MAIL_USERNAME;
+  if (!fromAddress) {
+    console.warn('⚠️ Mailing pominięty: brak adresu nadawcy (MAIL_FROM).');
+    return;
+  }
+
+  const fromName = process.env.MAIL_FROM_NAME || 'Chachor Piecze';
+  const { text, html } = createOrderEmailContent(order);
+
+  try {
+    await transporter.sendMail({
+      from: fromName ? `${fromName.replace(/"/g, "'")} <${fromAddress}>` : fromAddress,
+      to: recipient,
+      subject: 'Potwierdzenie zamówienia w Chachor Piecze',
+      text,
+      html
+    });
+    console.log(`📧 Wysłano potwierdzenie zamówienia do ${recipient}`);
+  } catch (err) {
+    console.error('❌ Nie udało się wysłać potwierdzenia zamówienia:', err);
+  }
+}
+
+function getStartOfDay(dateLike) {
+  const date = dateLike instanceof Date ? new Date(dateLike) : new Date(dateLike || Date.now());
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function getPreviousDayRange(referenceDate = new Date()) {
+  const end = getStartOfDay(referenceDate);
+  if (!end) {
+    return null;
+  }
+  const start = new Date(end);
+  start.setDate(start.getDate() - 1);
+  return { start, end, reportDate: normalizeDateInput(start) };
+}
+
+function formatDateForDisplay(dateInput, options = {}) {
+  if (!dateInput) {
+    return '';
+  }
+  const date = dateInput instanceof Date ? new Date(dateInput) : new Date(dateInput);
+  if (Number.isNaN(date.getTime())) {
+    return typeof dateInput === 'string' ? dateInput : '';
+  }
+  const formatter = new Intl.DateTimeFormat(DEFAULT_LOCALE, {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    ...options
+  });
+  return formatter.format(date);
+}
+
+function formatDateTimeForDisplay(dateInput) {
+  return formatDateForDisplay(dateInput, { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatTimeForDisplay(dateInput) {
+  if (!dateInput) {
+    return '';
+  }
+  const date = dateInput instanceof Date ? new Date(dateInput) : new Date(dateInput);
+  if (Number.isNaN(date.getTime())) {
+    return typeof dateInput === 'string' ? dateInput : '';
+  }
+  const formatter = new Intl.DateTimeFormat(DEFAULT_LOCALE, {
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+  return formatter.format(date);
+}
+
+function summarizeOrdersForReport(orders) {
+  const totals = orders.reduce((acc, order) => {
+    const amount = Number(order.totalAfterDiscount) || 0;
+    acc.grandTotal += amount;
+    return acc;
+  }, { grandTotal: 0 });
+
+  totals.ordersCount = orders.length;
+  totals.grandTotal = Number(totals.grandTotal.toFixed(2));
+  return totals;
+}
+
+function getPaymentReportStatus(order) {
+  const raw = order && typeof order.payment === 'string' ? order.payment.trim().toLowerCase() : '';
+  switch (raw) {
+    case 'online':
+      return 'Zapłacone online';
+    case 'place':
+      return 'Płatność na miejscu';
+    default: {
+      if (order && typeof order.paymentLabel === 'string' && order.paymentLabel.trim()) {
+        return order.paymentLabel.trim();
+      }
+      return 'Brak danych';
+    }
+  }
+}
+
+function createDailyOrdersEmailPayload(reportDate, orders, totals) {
+  const displayDate = formatDateForDisplay(`${reportDate}T00:00:00`);
+  const subjectPrefix = process.env.DAILY_ORDERS_EMAIL_SUBJECT || 'Zestawienie zamówień';
+  const subject = `${subjectPrefix} - ${displayDate || reportDate}`;
+
+  const headerLines = [
+    `Zestawienie zamówień z dnia ${displayDate || reportDate}`,
+    '',
+    `Liczba zamówień: ${totals.ordersCount}`,
+    `Łączna kwota do zapłaty: ${formatPrice(totals.grandTotal)}`,
+    ''
+  ];
+
+  const textOrders = orders.map((order) => {
+    const orderProducts = Array.isArray(order.products) ? order.products : [];
+    const sequenceLabel = Number.isFinite(order.sequenceNumber) && order.sequenceNumber > 0
+      ? `#${order.sequenceNumber}`
+      : 'brak';
+    const lines = [
+      `Numer w dniu: ${sequenceLabel}`,
+      `ID zamówienia: ${order.orderId || 'brak'}`,
+      `Godzina złożenia: ${formatTimeForDisplay(order.createdAt) || 'brak'}`,
+      `Adres email: ${order.email || 'brak'}`,
+      `Telefon: ${order.phone || 'brak'}`,
+      'Produkty:'
+    ];
+
+    if (orderProducts.length) {
+      orderProducts.forEach((product) => {
+        lines.push(`  • ${product.name} × ${product.quantity} — ${formatPrice(product.total)}`);
+      });
+    } else {
+      lines.push('  • brak pozycji');
+    }
+
+    if (order.discountCode) {
+      lines.push(`Rabat: ${order.discountCode} (${order.discountPercent}% / -${formatPrice(order.discountAmount)})`);
+    }
+
+    lines.push(`Kwota do zapłaty: ${formatPrice(order.totalAfterDiscount)}`);
+    lines.push(`Forma płatności: ${getPaymentReportStatus(order)}`);
+
+    if (order.comment) {
+      lines.push(`Komentarz: ${order.comment}`);
+    }
+
+    return lines.join('\n');
+  }).join('\n\n');
+
+  const headerText = headerLines.join('\n');
+  const text = textOrders ? `${headerText}\n${textOrders}` : headerText;
+
+  const orderRows = orders.map((order) => {
+    const orderProducts = Array.isArray(order.products) ? order.products : [];
+    const productsHtml = orderProducts.length
+      ? `<ul style="margin:0;padding-left:18px;">${orderProducts.map((product) => (
+        `<li>${escapeHtml(product.name)} × ${product.quantity} — ${formatPrice(product.total)}</li>`
+      )).join('')}</ul>`
+      : '<em>Brak pozycji</em>';
+
+    const discountHtml = order.discountCode
+      ? `<p style="margin:8px 0 0;"><strong>Rabat:</strong> ${escapeHtml(order.discountCode)} (${order.discountPercent}% / -${formatPrice(order.discountAmount)})</p>`
+      : '';
+
+    const commentHtml = order.comment
+      ? `<p style="margin:8px 0 0;"><strong>Komentarz:</strong><br>${escapeHtml(order.comment).replace(/\r?\n/g, '<br>')}</p>`
+      : '';
+
+    const paymentStatus = getPaymentReportStatus(order);
+    const sequenceCell = Number.isFinite(order.sequenceNumber) && order.sequenceNumber > 0
+      ? `#${order.sequenceNumber}`
+      : '';
+
+    return `
+      <tr>
+        <td style="padding:12px;border:1px solid #ddd;vertical-align:top;">${escapeHtml(sequenceCell)}</td>
+        <td style="padding:12px;border:1px solid #ddd;vertical-align:top;">${escapeHtml(order.orderId || '')}</td>
+        <td style="padding:12px;border:1px solid #ddd;vertical-align:top;">${escapeHtml(formatTimeForDisplay(order.createdAt) || '')}</td>
+        <td style="padding:12px;border:1px solid #ddd;vertical-align:top;">${escapeHtml(order.email || '')}</td>
+        <td style="padding:12px;border:1px solid #ddd;vertical-align:top;">${escapeHtml(order.phone || '')}</td>
+        <td style="padding:12px;border:1px solid #ddd;vertical-align:top;">
+          ${productsHtml}
+          <p style="margin:8px 0 0;"><strong>Kwota:</strong> ${formatPrice(order.totalAfterDiscount)}</p>
+          ${discountHtml}
+          ${commentHtml}
+        </td>
+        <td style="padding:12px;border:1px solid #ddd;vertical-align:top;">${escapeHtml(paymentStatus)}</td>
+      </tr>
+    `;
+  }).join('');
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#1f1f1f;">
+      <h2 style="margin-bottom:8px;">Zestawienie zamówień z dnia ${escapeHtml(displayDate || reportDate)}</h2>
+      <p><strong>Liczba zamówień:</strong> ${totals.ordersCount}</p>
+      <p><strong>Łączna kwota do zapłaty:</strong> ${formatPrice(totals.grandTotal)}</p>
+      ${orders.length ? `
+        <table style="border-collapse:collapse;width:100%;margin-top:16px;">
+          <thead>
+            <tr style="background:#f5f5f5;">
+              <th align="left" style="padding:8px;border:1px solid #ddd;">Numer w dniu</th>
+              <th align="left" style="padding:8px;border:1px solid #ddd;">Nr zamówienia</th>
+              <th align="left" style="padding:8px;border:1px solid #ddd;">Godzina złożenia</th>
+              <th align="left" style="padding:8px;border:1px solid #ddd;">Adres email</th>
+              <th align="left" style="padding:8px;border:1px solid #ddd;">Telefon</th>
+              <th align="left" style="padding:8px;border:1px solid #ddd;">Produkty</th>
+              <th align="left" style="padding:8px;border:1px solid #ddd;">Płatność</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${orderRows}
+          </tbody>
+        </table>
+      ` : '<p>Brak zamówień w poprzednim dniu.</p>'}
+    </div>
+  `;
+
+  return { subject, text, html };
+}
+
+async function purgeOldOrders() {
+  if (!ORDER_RETENTION_DAYS) {
+    return;
+  }
+  const cutoff = new Date();
+  cutoff.setHours(0, 0, 0, 0);
+  cutoff.setDate(cutoff.getDate() - ORDER_RETENTION_DAYS);
+  try {
+    await Order.deleteMany({ createdAt: { $lt: cutoff } });
+  } catch (err) {
+    console.error('❌ Błąd podczas usuwania starych zamówień:', err);
+  }
+}
+
+async function purgeOldOrderReports() {
+  if (!ORDER_REPORT_RETENTION_DAYS) {
+    return;
+  }
+  const cutoff = getStartOfDay(new Date());
+  if (!cutoff) {
+    return;
+  }
+  cutoff.setDate(cutoff.getDate() - ORDER_REPORT_RETENTION_DAYS);
+  const cutoffDate = normalizeDateInput(cutoff);
+  if (!cutoffDate) {
+    return;
+  }
+  try {
+    await OrderReport.deleteMany({ reportDate: { $lte: cutoffDate } });
+  } catch (err) {
+    console.error('❌ Błąd podczas usuwania starych zestawień zamówień:', err);
+  }
+}
+
+async function processDailyOrders(referenceDate = new Date()) {
+  const range = getPreviousDayRange(referenceDate);
+  if (!range) {
+    return;
+  }
+
+  const { start, end, reportDate } = range;
+
+  try {
+    const orders = await Order.find({
+      createdAt: {
+        $gte: start,
+        $lt: end
+      }
+    })
+      .sort({ createdAt: 1, _id: 1 })
+      .lean();
+
+    const transporter = getMailTransporter();
+    const targetEmail = DAILY_ORDERS_EMAIL;
+
+    const reportOrders = orders.map((order, index) => {
+      const products = Array.isArray(order.products) ? order.products : [];
+      const mappedProducts = products.map((product) => {
+        const quantity = Number(product.quantity) || 0;
+        const price = Number(product.price) || 0;
+        return {
+          name: product && typeof product.name === 'string' ? product.name : '',
+          quantity,
+          price,
+          total: Number((price * quantity).toFixed(2))
+        };
+      });
+
+      return {
+        orderId: String(order._id || ''),
+        email: typeof order.email === 'string' ? order.email : '',
+        phone: typeof order.phone === 'string' ? order.phone : '',
+        payment: typeof order.payment === 'string' ? order.payment : '',
+        paymentLabel: describePayment(order.payment),
+        comment: typeof order.comment === 'string' ? order.comment : '',
+        pickupDate: typeof order.pickupDate === 'string' ? order.pickupDate : '',
+        discountCode: typeof order.discountCode === 'string' ? order.discountCode : '',
+        discountPercent: Number(order.discountPercent) || 0,
+        discountAmount: Number(order.discountAmount) || 0,
+        totalBeforeDiscount: Number(order.totalBeforeDiscount) || 0,
+        totalAfterDiscount: Number(order.totalAfterDiscount) || 0,
+        createdAt: order.createdAt ? new Date(order.createdAt) : null,
+        products: mappedProducts,
+        sequenceNumber: index + 1
+      };
+    });
+
+    const totals = summarizeOrdersForReport(reportOrders);
+    const emailPayload = createDailyOrdersEmailPayload(reportDate, reportOrders, totals);
+
+    const reportUpdate = {
+      collectedAt: new Date(),
+      sentTo: targetEmail,
+      emailSubject: emailPayload.subject,
+      orders: reportOrders,
+      totals
+    };
+
+    let emailStatus = 'skipped';
+    let failureReason = '';
+    let sentAt = null;
+
+    if (!targetEmail) {
+      failureReason = 'Brak adresu docelowego (DAILY_ORDERS_EMAIL).';
+      console.warn('⚠️ Pominięto wysyłkę zestawienia zamówień: brak adresu docelowego.');
+    } else if (!transporter) {
+      failureReason = 'Brak skonfigurowanego transportu email.';
+      console.warn('⚠️ Pominięto wysyłkę zestawienia zamówień: brak konfiguracji mailera.');
+    } else {
+      try {
+        await transporter.sendMail({
+          from: process.env.MAIL_FROM || process.env.MAIL_USER || process.env.MAIL_USERNAME || targetEmail,
+          to: targetEmail,
+          subject: emailPayload.subject,
+          text: emailPayload.text,
+          html: emailPayload.html
+        });
+        sentAt = new Date();
+        emailStatus = 'sent';
+        console.log(`📬 Wysłano dzienne zestawienie zamówień na adres ${targetEmail} (${reportOrders.length} zamówień).`);
+      } catch (err) {
+        emailStatus = 'failed';
+        failureReason = err && err.message ? err.message : 'Nieznany błąd wysyłki';
+        console.error('❌ Błąd wysyłki dziennego zestawienia zamówień:', err);
+      }
+    }
+
+    reportUpdate.sentAt = sentAt;
+    reportUpdate.emailStatus = emailStatus;
+    reportUpdate.failureReason = failureReason;
+
+    await OrderReport.findOneAndUpdate(
+      { reportDate },
+      { $set: reportUpdate },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+
+    await purgeOldOrders();
+    await purgeOldOrderReports();
+  } catch (err) {
+    console.error('❌ Błąd przygotowania dziennego zestawienia zamówień:', err);
+  }
+}
+
+function startDailyOrderSummaryJob() {
+  if (!DAILY_ORDERS_ENABLED) {
+    console.warn('ℹ️ Automatyczne zestawienia zamówień są wyłączone (DAILY_ORDERS_ENABLED=false).');
+    return;
+  }
+  try {
+    cron.schedule(DAILY_ORDERS_CRON, () => {
+      processDailyOrders(new Date());
+    }, {
+      timezone: DAILY_ORDERS_TIMEZONE
+    });
+    console.log(`🕐 Zaplanowano dzienne wysyłki zamówień (cron: "${DAILY_ORDERS_CRON}", strefa: ${DAILY_ORDERS_TIMEZONE}).`);
+  } catch (err) {
+    console.error('❌ Nie udało się uruchomić harmonogramu zamówień:', err);
+  }
+}
 function normalizeDateInput(value) {
   if (!value) {
     return null;
@@ -932,6 +1605,46 @@ const Order = mongoose.model("Order", new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 }));
 
+const orderReportProductSchema = new mongoose.Schema({
+  name: { type: String, default: '' },
+  quantity: { type: Number, default: 0 },
+  price: { type: Number, default: 0 },
+  total: { type: Number, default: 0 }
+}, { _id: false });
+
+const orderReportEntrySchema = new mongoose.Schema({
+  sequenceNumber: { type: Number },
+  orderId: { type: String, default: '' },
+  email: { type: String, default: '' },
+  phone: { type: String, default: '' },
+  payment: { type: String, default: '' },
+  paymentLabel: { type: String, default: '' },
+  comment: { type: String, default: '' },
+  pickupDate: { type: String, default: '' },
+  discountCode: { type: String, default: '' },
+  discountPercent: { type: Number, default: 0 },
+  discountAmount: { type: Number, default: 0 },
+  totalBeforeDiscount: { type: Number, default: 0 },
+  totalAfterDiscount: { type: Number, default: 0 },
+  createdAt: { type: Date },
+  products: { type: [orderReportProductSchema], default: [] }
+}, { _id: false });
+
+const OrderReport = mongoose.model('OrderReport', new mongoose.Schema({
+  reportDate: { type: String, required: true, unique: true },
+  collectedAt: { type: Date, default: Date.now },
+  sentAt: { type: Date },
+  sentTo: { type: String, default: '' },
+  emailSubject: { type: String, default: '' },
+  emailStatus: { type: String, default: 'pending' },
+  failureReason: { type: String, default: '' },
+  orders: { type: [orderReportEntrySchema], default: [] },
+  totals: {
+    ordersCount: { type: Number, default: 0 },
+    grandTotal: { type: Number, default: 0 }
+  }
+}, { timestamps: true }));
+
 app.post("/api/orders", async (req, res) => {
   try {
     const products = Array.isArray(req.body.products) ? req.body.products : [];
@@ -1035,11 +1748,69 @@ app.post("/api/orders", async (req, res) => {
       totalAfterDiscount
     });
 
-    await order.save();
-    res.json({ message: "Zamówienie zapisane", order });
+    const savedOrder = await order.save();
+    res.json({ message: "Zamówienie zapisane", order: savedOrder });
+
+    sendOrderConfirmationEmail(savedOrder.toObject());
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Błąd zapisu zamówienia" });
+  }
+});
+
+app.get('/api/order-reports', async (req, res) => {
+  try {
+    const limit = parsePositiveInteger(req.query.limit, 30);
+    await purgeOldOrderReports();
+    const reports = await OrderReport.find()
+      .sort({ reportDate: -1 })
+      .limit(limit)
+      .lean();
+    res.json(reports);
+  } catch (err) {
+    console.error('❌ Błąd pobierania zestawień zamówień:', err);
+    res.status(500).json({ error: 'Nie udało się pobrać zestawień zamówień' });
+  }
+});
+
+app.get('/api/order-reports/:reportDate', async (req, res) => {
+  try {
+    const reportDate = normalizeDateInput(req.params.reportDate);
+    if (!reportDate) {
+      return res.status(400).json({ error: 'Nieprawidłowa data zestawienia' });
+    }
+    const report = await OrderReport.findOne({ reportDate }).lean();
+    if (!report) {
+      return res.status(404).json({ error: 'Nie znaleziono zestawienia dla wskazanej daty' });
+    }
+    res.json(report);
+  } catch (err) {
+    console.error('❌ Błąd pobierania zestawienia zamówień:', err);
+    res.status(500).json({ error: 'Nie udało się pobrać zestawienia zamówień' });
+  }
+});
+
+app.post('/api/order-reports/run', async (req, res) => {
+  try {
+    const { date, password } = req.body || {};
+    if (!password || password !== process.env.HOST_PASSWORD) {
+      return res.status(401).json({ error: 'Brak autoryzacji do uruchomienia raportu' });
+    }
+
+    let referenceDate = new Date();
+    if (date) {
+      const parsed = new Date(date);
+      if (Number.isNaN(parsed.getTime())) {
+        return res.status(400).json({ error: 'Nieprawidłowa data referencyjna' });
+      }
+      referenceDate = parsed;
+    }
+
+    await processDailyOrders(referenceDate);
+    res.json({ success: true, message: 'Raport został przygotowany' });
+  } catch (err) {
+    console.error('❌ Błąd ręcznego uruchomienia raportu zamówień:', err);
+    res.status(500).json({ error: 'Nie udało się uruchomić raportu' });
   }
 });
 

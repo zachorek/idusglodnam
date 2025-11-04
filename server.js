@@ -2,13 +2,177 @@ const express = require('express');
 const mongoose = require('mongoose');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const multer = require('multer');
 const nodemailer = require('nodemailer');
 const cron = require('node-cron');
+const {
+  S3Client,
+  PutObjectCommand,
+  DeleteObjectCommand
+} = require('@aws-sdk/client-s3');
 require('dotenv').config();
 
 const app = express();
 const port = process.env.PORT || 3000;
+
+const CLOUDFLARE_R2_ACCESS_KEY_ID = process.env.CLOUDFLARE_R2_ACCESS_KEY_ID
+  || process.env.CLOUDFLARE_ACCESS_KEY_ID
+  || process.env.R2_ACCESS_KEY_ID
+  || '';
+const CLOUDFLARE_R2_SECRET_ACCESS_KEY = process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY
+  || process.env.CLOUDFLARE_SECRET_ACCESS_KEY
+  || process.env.R2_SECRET_ACCESS_KEY
+  || '';
+const CLOUDFLARE_R2_BUCKET = process.env.CLOUDFLARE_R2_BUCKET
+  || process.env.R2_BUCKET
+  || process.env.CLOUDFLARE_BUCKET
+  || '';
+const CLOUDFLARE_R2_ACCOUNT_ID = process.env.CLOUDFLARE_R2_ACCOUNT_ID
+  || process.env.CLOUDFLARE_ACCOUNT_ID
+  || '';
+const CLOUDFLARE_R2_ENDPOINT = process.env.CLOUDFLARE_R2_ENDPOINT
+  || (CLOUDFLARE_R2_ACCOUNT_ID ? `https://${CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com` : '');
+const CLOUDFLARE_R2_PUBLIC_BASE_URL = (process.env.CLOUDFLARE_R2_PUBLIC_BASE_URL
+  || process.env.CLOUDFLARE_PUBLIC_BASE_URL
+  || '').replace(/\/*$/, '');
+
+const isCloudflareStorageConfigured = Boolean(
+  CLOUDFLARE_R2_ACCESS_KEY_ID
+  && CLOUDFLARE_R2_SECRET_ACCESS_KEY
+  && CLOUDFLARE_R2_BUCKET
+  && CLOUDFLARE_R2_ENDPOINT
+  && CLOUDFLARE_R2_PUBLIC_BASE_URL
+);
+
+let cloudflareStorageClient = null;
+if (isCloudflareStorageConfigured) {
+  cloudflareStorageClient = new S3Client({
+    region: 'auto',
+    endpoint: CLOUDFLARE_R2_ENDPOINT,
+    credentials: {
+      accessKeyId: CLOUDFLARE_R2_ACCESS_KEY_ID,
+      secretAccessKey: CLOUDFLARE_R2_SECRET_ACCESS_KEY
+    }
+  });
+} else {
+  console.warn('⚠️ Cloudflare storage is not fully configured. Set CLOUDFLARE_R2_* environment variables to enable image uploads.');
+}
+
+const MIME_EXTENSION_MAP = {
+  'image/jpeg': 'jpg',
+  'image/jpg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+  'image/svg+xml': 'svg',
+  'image/avif': 'avif',
+  'image/heic': 'heic',
+  'image/heif': 'heif'
+};
+
+function guessFileExtension(mimetype) {
+  if (!mimetype || typeof mimetype !== 'string') {
+    return '';
+  }
+  const lower = mimetype.toLowerCase();
+  if (MIME_EXTENSION_MAP[lower]) {
+    return MIME_EXTENSION_MAP[lower];
+  }
+  const slashIndex = lower.lastIndexOf('/');
+  if (slashIndex === -1) {
+    return '';
+  }
+  const candidate = lower.slice(slashIndex + 1).replace(/[^a-z0-9]+/g, '');
+  return candidate || '';
+}
+
+function buildCloudflareObjectKey(prefix, mimetype) {
+  const normalizedPrefix = prefix
+    ? String(prefix)
+        .trim()
+        .replace(/[^a-z0-9/_-]+/gi, '-')
+        .replace(/^-+|-+$/g, '')
+    : '';
+  const extension = guessFileExtension(mimetype);
+  const uniqueComponent = typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : crypto.randomBytes(16).toString('hex');
+  const uniqueName = `${Date.now()}-${uniqueComponent}`;
+  const prefixPath = normalizedPrefix ? `${normalizedPrefix.replace(/\/+$/, '')}/` : '';
+  return `${prefixPath}${uniqueName}${extension ? `.${extension}` : ''}`;
+}
+
+function buildCloudflarePublicUrl(key) {
+  if (!key || !CLOUDFLARE_R2_PUBLIC_BASE_URL) {
+    return '';
+  }
+  const sanitizedKey = String(key).replace(/^\/+/, '');
+  return `${CLOUDFLARE_R2_PUBLIC_BASE_URL}/${sanitizedKey}`;
+}
+
+function resolveKeyFromUrl(possibleUrl) {
+  if (!possibleUrl || typeof possibleUrl !== 'string') {
+    return null;
+  }
+  const trimmed = possibleUrl.trim();
+  if (!trimmed || trimmed.startsWith('data:')) {
+    return null;
+  }
+  if (!trimmed.includes('://')) {
+    return trimmed.replace(/^\/+/, '');
+  }
+  const sanitizedBase = CLOUDFLARE_R2_PUBLIC_BASE_URL;
+  if (sanitizedBase && trimmed.startsWith(`${sanitizedBase}/`)) {
+    return trimmed.slice(sanitizedBase.length + 1);
+  }
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.pathname.replace(/^\/+/, '');
+  } catch (err) {
+    return null;
+  }
+}
+
+async function uploadImageToCloudflare(buffer, mimetype, prefix) {
+  if (!isCloudflareStorageConfigured || !cloudflareStorageClient) {
+    throw new Error('Cloudflare storage is not configured.');
+  }
+  if (!buffer || !buffer.length) {
+    throw new Error('Brak danych zdjęcia do przesłania.');
+  }
+  const key = buildCloudflareObjectKey(prefix, mimetype);
+  const command = new PutObjectCommand({
+    Bucket: CLOUDFLARE_R2_BUCKET,
+    Key: key,
+    Body: buffer,
+    ContentType: mimetype
+  });
+  await cloudflareStorageClient.send(command);
+  return {
+    key,
+    url: buildCloudflarePublicUrl(key)
+  };
+}
+
+async function deleteImageFromCloudflare(storedKeyOrUrl) {
+  if (!isCloudflareStorageConfigured || !cloudflareStorageClient) {
+    return;
+  }
+  const key = resolveKeyFromUrl(storedKeyOrUrl);
+  if (!key) {
+    return;
+  }
+  try {
+    const command = new DeleteObjectCommand({
+      Bucket: CLOUDFLARE_R2_BUCKET,
+      Key: key
+    });
+    await cloudflareStorageClient.send(command);
+  } catch (err) {
+    console.error(`⚠️ Nie udało się usunąć pliku ${key} z Cloudflare:`, err);
+  }
+}
 
 const storage = multer.memoryStorage();
 
@@ -29,14 +193,21 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Połączenie z MongoDB Atlas
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => {
-    console.log('✅ Połączono z MongoDB');
-    purgeOldOrders();
-    purgeOldOrderReports();
-    startDailyOrderSummaryJob();
-  })
-  .catch(err => console.error('❌ Błąd połączenia z MongoDB:', err));
+const SHOULD_SKIP_MONGO = String(process.env.SKIP_MONGO || '').toLowerCase() === 'true'
+  || process.env.NODE_ENV === 'test';
+
+if (!SHOULD_SKIP_MONGO) {
+  mongoose.connect(process.env.MONGO_URI)
+    .then(() => {
+      console.log('✅ Połączono z MongoDB');
+      purgeOldOrders();
+      purgeOldOrderReports();
+      startDailyOrderSummaryJob();
+    })
+    .catch((err) => console.error('❌ Błąd połączenia z MongoDB:', err));
+} else {
+  console.warn('ℹ️ Pominięto połączenie z MongoDB (tryb testowy lub SKIP_MONGO=true).');
+}
 
 // MODELE
 const ALL_DAY_INDICES = [0, 1, 2, 3, 4, 5, 6];
@@ -109,6 +280,7 @@ const Product = mongoose.model('Product', new mongoose.Schema({
   category: { type: String, required: true },
   imageData: String,
   imageUrl: String,
+  imageKey: String,
   availabilityDays: {
     type: [Number],
     default: [],
@@ -120,6 +292,8 @@ const CategorySchema = new mongoose.Schema({
   name: { type: String, required: true },
   order: { type: Number, default: 0 },
   tileImageData: { type: String, default: '' },
+  tileImageUrl: { type: String, default: '' },
+  tileImageKey: { type: String, default: '' },
   tileImageAlt: { type: String, default: '' }
 });
 
@@ -148,12 +322,16 @@ const discountCodeSchema = new mongoose.Schema({
 const DiscountCode = mongoose.model('DiscountCode', discountCodeSchema);
 
 const aboutGalleryItemSchema = new mongoose.Schema({
-  imageData: { type: String, required: true },
+  imageData: { type: String, default: '' },
+  imageUrl: { type: String, default: '' },
+  imageKey: { type: String, default: '' },
   createdAt: { type: Date, default: Date.now }
 }, { _id: true });
 
 const AboutContent = mongoose.model('AboutContent', new mongoose.Schema({
   heroImageData: String,
+  heroImageUrl: { type: String, default: '' },
+  heroImageKey: { type: String, default: '' },
   heroText: { type: String, default: '' },
   gallery: { type: [aboutGalleryItemSchema], default: [] }
 }, { timestamps: true }));
@@ -199,6 +377,42 @@ const DAILY_ORDERS_CRON = process.env.DAILY_ORDERS_CRON || '1 0 * * *';
 const DAILY_ORDERS_TIMEZONE = process.env.DAILY_ORDERS_TIMEZONE || 'Europe/Warsaw';
 const DAILY_ORDERS_ENABLED = String(process.env.DAILY_ORDERS_ENABLED || 'true').toLowerCase() !== 'false';
 const DEFAULT_LOCALE = process.env.APP_LOCALE || 'pl-PL';
+
+function parseDailyCronExpression(cronExpression) {
+  if (!cronExpression || typeof cronExpression !== 'string') {
+    return null;
+  }
+  const parts = cronExpression.trim().split(/\s+/);
+  if (parts.length !== 5) {
+    return null;
+  }
+  const [minutePart, hourPart, dayOfMonth, month, dayOfWeek] = parts;
+  if (dayOfMonth !== '*' || month !== '*' || dayOfWeek !== '*') {
+    return null;
+  }
+  if (!/^\d+$/.test(minutePart) || !/^\d+$/.test(hourPart)) {
+    return null;
+  }
+  const minute = Number(minutePart);
+  const hour = Number(hourPart);
+  if (!Number.isInteger(minute) || minute < 0 || minute > 59) {
+    return null;
+  }
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23) {
+    return null;
+  }
+  return { hour, minute };
+}
+
+function formatCronDailyTime(cronExpression) {
+  const parsed = parseDailyCronExpression(cronExpression);
+  if (!parsed) {
+    return null;
+  }
+  const hours = parsed.hour.toString().padStart(2, '0');
+  const minutes = parsed.minute.toString().padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
 
 function getCachedValue(cacheRef, timestampRef) {
   if (!cacheRef) {
@@ -742,14 +956,17 @@ function createDailyOrdersEmailPayload(reportDate, orders, totals) {
   const displayDate = formatDateForDisplay(`${reportDate}T00:00:00`);
   const subjectPrefix = process.env.DAILY_ORDERS_EMAIL_SUBJECT || 'Zestawienie zamówień';
   const subject = `${subjectPrefix} - ${displayDate || reportDate}`;
+  const hasOrders = Array.isArray(orders) && orders.length > 0;
 
   const headerLines = [
     `Zestawienie zamówień z dnia ${displayDate || reportDate}`,
     '',
     `Liczba zamówień: ${totals.ordersCount}`,
-    `Łączna kwota do zapłaty: ${formatPrice(totals.grandTotal)}`,
-    ''
+    `Łączna kwota do zapłaty: ${formatPrice(totals.grandTotal)}`
   ];
+  if (!hasOrders) {
+    headerLines.push('Brak zamówień w poprzednim dniu.');
+  }
 
   const textOrders = orders.map((order) => {
     const orderProducts = Array.isArray(order.products) ? order.products : [];
@@ -788,7 +1005,7 @@ function createDailyOrdersEmailPayload(reportDate, orders, totals) {
   }).join('\n\n');
 
   const headerText = headerLines.join('\n');
-  const text = textOrders ? `${headerText}\n${textOrders}` : headerText;
+  const text = hasOrders ? `${headerText}\n\n${textOrders}` : `${headerText}\n`;
 
   const orderRows = orders.map((order) => {
     const orderProducts = Array.isArray(order.products) ? order.products : [];
@@ -834,6 +1051,7 @@ function createDailyOrdersEmailPayload(reportDate, orders, totals) {
       <h2 style="margin-bottom:8px;">Zestawienie zamówień z dnia ${escapeHtml(displayDate || reportDate)}</h2>
       <p><strong>Liczba zamówień:</strong> ${totals.ordersCount}</p>
       <p><strong>Łączna kwota do zapłaty:</strong> ${formatPrice(totals.grandTotal)}</p>
+      ${hasOrders ? '' : '<p>Brak zamówień w poprzednim dniu.</p>'}
       ${orders.length ? `
         <table style="border-collapse:collapse;width:100%;margin-top:16px;">
           <thead>
@@ -856,6 +1074,17 @@ function createDailyOrdersEmailPayload(reportDate, orders, totals) {
   `;
 
   return { subject, text, html };
+}
+
+function getDailyOrderReportSettings() {
+  return {
+    enabled: DAILY_ORDERS_ENABLED,
+    targetEmail: DAILY_ORDERS_EMAIL,
+    cronExpression: DAILY_ORDERS_CRON,
+    timezone: DAILY_ORDERS_TIMEZONE,
+    scheduledTime: formatCronDailyTime(DAILY_ORDERS_CRON),
+    sendsEmptyReport: true
+  };
 }
 
 async function purgeOldOrders() {
@@ -1080,6 +1309,7 @@ app.get('/api/about', async (req, res) => {
     const about = await AboutContent.findOne().lean();
     const payload = {
       heroImageData: about && about.heroImageData ? about.heroImageData : '',
+      heroImageUrl: about && about.heroImageUrl ? about.heroImageUrl : '',
       heroText: about && about.heroText ? about.heroText : DEFAULT_ABOUT_TEXT,
       gallery: about && Array.isArray(about.gallery) ? about.gallery : []
     };
@@ -1339,15 +1569,21 @@ app.post('/api/products', upload.single('image'), async (req, res) => {
       return res.status(400).json({ error: 'Nieprawidłowa cena' });
     }
 
-    const base64Image = req.file.buffer.toString('base64');
-    const imageData = `data:${req.file.mimetype};base64,${base64Image}`;
+    let uploadedImage;
+    try {
+      uploadedImage = await uploadImageToCloudflare(req.file.buffer, req.file.mimetype, 'products');
+    } catch (uploadErr) {
+      console.error('Błąd przesyłania zdjęcia produktu do Cloudflare:', uploadErr);
+      return res.status(500).json({ error: 'Nie udało się zapisać zdjęcia produktu.' });
+    }
 
     const product = new Product({
       name: name ? name.trim() : name,
       price: numericPrice,
       desc: desc ? desc.trim() : desc,
       category,
-      imageData,
+      imageUrl: uploadedImage.url,
+      imageKey: uploadedImage.key,
       availabilityDays
     });
 
@@ -1363,24 +1599,53 @@ app.post('/api/products', upload.single('image'), async (req, res) => {
 app.post('/api/about', upload.single('aboutImage'), async (req, res) => {
   try {
     const text = typeof req.body.aboutText === 'string' ? req.body.aboutText.trim() : '';
-    const update = {};
+    const updateSet = {};
+    const updateUnset = {};
+    let previousAboutDoc = null;
+    let uploadedHeroImage = null;
 
     if (text) {
-      update.heroText = text;
+      updateSet.heroText = text;
     }
 
     if (req.file) {
-      const base64Image = req.file.buffer.toString('base64');
-      update.heroImageData = `data:${req.file.mimetype};base64,${base64Image}`;
+      previousAboutDoc = await AboutContent.findOne();
+      try {
+        uploadedHeroImage = await uploadImageToCloudflare(req.file.buffer, req.file.mimetype, 'about/hero');
+      } catch (uploadErr) {
+        console.error('Błąd przesyłania zdjęcia sekcji O nas do Cloudflare:', uploadErr);
+        return res.status(500).json({ error: 'Nie udało się zapisać zdjęcia sekcji.' });
+      }
+      updateSet.heroImageUrl = uploadedHeroImage.url;
+      updateSet.heroImageKey = uploadedHeroImage.key;
+      updateUnset.heroImageData = '';
     }
 
-    if (!Object.keys(update).length) {
+    if (!Object.keys(updateSet).length) {
       return res.status(400).json({ error: 'Brak danych do zapisania' });
     }
 
-    const about = await AboutContent.findOneAndUpdate({}, { $set: update }, { upsert: true, new: true, setDefaultsOnInsert: true }).lean();
+    const updatePayload = { $set: updateSet };
+    if (Object.keys(updateUnset).length) {
+      updatePayload.$unset = updateUnset;
+    }
+
+    const about = await AboutContent.findOneAndUpdate(
+      {},
+      updatePayload,
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    ).lean();
+
+    if (uploadedHeroImage && about) {
+      const previousKey = previousAboutDoc && (previousAboutDoc.heroImageKey || previousAboutDoc.heroImageUrl);
+      if (previousKey && previousKey !== uploadedHeroImage.key) {
+        await deleteImageFromCloudflare(previousKey);
+      }
+    }
+
     const payload = {
       heroImageData: about && about.heroImageData ? about.heroImageData : '',
+      heroImageUrl: about && about.heroImageUrl ? about.heroImageUrl : '',
       heroText: about && about.heroText ? about.heroText : DEFAULT_ABOUT_TEXT,
       gallery: about && Array.isArray(about.gallery) ? about.gallery : []
     };
@@ -1396,11 +1661,16 @@ app.post('/api/about/gallery', upload.single('galleryImage'), async (req, res) =
     if (!req.file) {
       return res.status(400).json({ error: 'Brak zdjęcia do zapisania' });
     }
-    const base64Image = req.file.buffer.toString('base64');
-    const imageData = `data:${req.file.mimetype};base64,${base64Image}`;
+    let uploadedImage = null;
+    try {
+      uploadedImage = await uploadImageToCloudflare(req.file.buffer, req.file.mimetype, 'about/gallery');
+    } catch (uploadErr) {
+      console.error('Błąd przesyłania zdjęcia galerii do Cloudflare:', uploadErr);
+      return res.status(500).json({ error: 'Nie udało się zapisać zdjęcia galerii.' });
+    }
     const about = await AboutContent.findOneAndUpdate(
       {},
-      { $push: { gallery: { imageData, createdAt: new Date() } } },
+      { $push: { gallery: { imageUrl: uploadedImage.url, imageKey: uploadedImage.key, createdAt: new Date() } } },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     ).lean();
     res.json({ gallery: about && Array.isArray(about.gallery) ? about.gallery : [] });
@@ -1424,8 +1694,12 @@ app.delete('/api/about/gallery/:imageId', async (req, res) => {
     if (!item) {
       return res.status(404).json({ error: 'Nie znaleziono zdjęcia w galerii' });
     }
+    const assetReference = item.imageKey || item.imageUrl;
     item.deleteOne();
     await about.save();
+    if (assetReference) {
+      await deleteImageFromCloudflare(assetReference);
+    }
     res.json({ gallery: about.gallery });
   } catch (err) {
     console.error('Błąd usuwania zdjęcia z galerii:', err);
@@ -1495,10 +1769,18 @@ app.put('/api/categories/:id/tile-image', upload.single('tileImage'), async (req
       return res.status(400).json({ error: 'Brak danych do aktualizacji' });
     }
 
+    let previousAssetReference = null;
     if (req.file) {
-      const base64Image = req.file.buffer.toString('base64');
-      const imageData = `data:${req.file.mimetype};base64,${base64Image}`;
-      category.tileImageData = imageData;
+      try {
+        const uploadedImage = await uploadImageToCloudflare(req.file.buffer, req.file.mimetype, 'categories/tiles');
+        previousAssetReference = category.tileImageKey || category.tileImageUrl;
+        category.tileImageUrl = uploadedImage.url;
+        category.tileImageKey = uploadedImage.key;
+        category.tileImageData = '';
+      } catch (uploadErr) {
+        console.error('Błąd przesyłania zdjęcia kafelka kategorii do Cloudflare:', uploadErr);
+        return res.status(500).json({ error: 'Nie udało się zapisać grafiki kategorii.' });
+      }
       if (altRaw === undefined) {
         category.tileImageAlt = category.tileImageAlt || '';
       }
@@ -1510,10 +1792,14 @@ app.put('/api/categories/:id/tile-image', upload.single('tileImage'), async (req
 
     await category.save();
     invalidateCategoriesCache();
+    if (previousAssetReference && previousAssetReference !== category.tileImageKey) {
+      await deleteImageFromCloudflare(previousAssetReference);
+    }
 
     res.json({
       _id: category._id,
       tileImageData: category.tileImageData,
+      tileImageUrl: category.tileImageUrl,
       tileImageAlt: category.tileImageAlt
     });
   } catch (err) {
@@ -1532,10 +1818,16 @@ app.delete('/api/categories/:id/tile-image', async (req, res) => {
     if (!category) {
       return res.status(404).json({ error: 'Kategoria nie istnieje' });
     }
+    const assetReference = category.tileImageKey || category.tileImageUrl;
     category.tileImageData = '';
+    category.tileImageUrl = '';
+    category.tileImageKey = '';
     category.tileImageAlt = '';
     await category.save();
     invalidateCategoriesCache();
+    if (assetReference) {
+      await deleteImageFromCloudflare(assetReference);
+    }
     res.json({ message: 'Grafika usunięta' });
   } catch (err) {
     console.error('Błąd usuwania grafiki kategorii:', err);
@@ -1886,6 +2178,10 @@ app.post("/api/orders", async (req, res) => {
   }
 });
 
+app.get('/api/settings/order-reports', (req, res) => {
+  res.json(getDailyOrderReportSettings());
+});
+
 app.get('/api/order-reports', async (req, res) => {
   try {
     const limit = parsePositiveInteger(req.query.limit, 30);
@@ -2001,8 +2297,12 @@ app.delete('/api/products/:id', async (req, res) => {
       return res.status(404).json({ error: 'Produkt nie istnieje' });
     }
 
+    const assetReference = product.imageKey || product.imageUrl;
     await product.deleteOne();
     invalidateProductsCache();
+    if (assetReference) {
+      await deleteImageFromCloudflare(assetReference);
+    }
     res.json({ message: '✅ Produkt usunięty' });
   } catch (err) {
     console.error(err);
@@ -2022,6 +2322,19 @@ app.post('/api/login-host', (req, res) => {
 // -------------------------
 
 // Start serwera
-app.listen(port, () => {
-  console.log(`🚀 Serwer działa na http://localhost:${port}`);
-});
+function startServer() {
+  return app.listen(port, () => {
+    console.log(`🚀 Serwer działa na http://localhost:${port}`);
+  });
+}
+
+if (require.main === module) {
+  startServer();
+}
+
+module.exports = {
+  app,
+  startServer,
+  createDailyOrdersEmailPayload,
+  getDailyOrderReportSettings
+};

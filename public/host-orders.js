@@ -1,5 +1,6 @@
 const reportsContainer = document.getElementById('orderReportsContainer');
 const reportsMessage = document.getElementById('orderReportsMessage');
+const orderReportsDescription = document.getElementById('orderReportsDescription');
 const calendarInput = document.getElementById('ordersDatePicker');
 const calendarMessage = document.getElementById('calendarOrdersMessage');
 const calendarContainer = document.getElementById('calendarOrdersContainer');
@@ -11,6 +12,50 @@ const currencyFormatter = new Intl.NumberFormat(locale, {
 });
 
 const reportsCache = new Map();
+const ORDER_REPORT_DESCRIPTION_FALLBACK = 'Codziennie generujemy raport za poprzedni dzień i wysyłamy go na skonfigurowany adres e-mail.';
+
+function describeOrderReportSchedule(settings) {
+  if (!settings || typeof settings !== 'object') {
+    return ORDER_REPORT_DESCRIPTION_FALLBACK;
+  }
+
+  if (settings.enabled === false) {
+    return 'Automatyczne raporty są obecnie wyłączone. Możesz uruchomić raport ręcznie w razie potrzeby.';
+  }
+
+  const timeLabel = settings.scheduledTime || null;
+  const timezone = settings.timezone || '';
+  const targetEmail = settings.targetEmail || '';
+  const sendsEmptyReport = settings.sendsEmptyReport !== false;
+
+  const timeFragment = timeLabel ? `o ${timeLabel}` : 'o skonfigurowanej godzinie';
+  const timezoneFragment = timezone ? ` (czas ${timezone})` : '';
+  const emailFragment = targetEmail
+    ? `wysyłamy go na adres ${targetEmail}`
+    : 'wysyłamy go na skonfigurowany adres e-mail';
+  const emptyReportFragment = sendsEmptyReport
+    ? 'Nawet jeśli nie było zamówień, otrzymasz potwierdzenie z podsumowaniem.'
+    : '';
+
+  return `Codziennie ${timeFragment}${timezoneFragment} generujemy raport za poprzedni dzień i ${emailFragment}. ${emptyReportFragment}`.trim();
+}
+
+async function loadOrderReportSettings() {
+  if (!orderReportsDescription) {
+    return;
+  }
+  try {
+    const response = await fetch('/api/settings/order-reports');
+    if (!response.ok) {
+      throw new Error('Nie udało się pobrać ustawień raportów zamówień.');
+    }
+    const settings = await response.json();
+    orderReportsDescription.textContent = describeOrderReportSchedule(settings);
+  } catch (err) {
+    console.error(err);
+    orderReportsDescription.textContent = ORDER_REPORT_DESCRIPTION_FALLBACK;
+  }
+}
 
 function formatCurrency(value) {
   const number = Number(value);
@@ -601,6 +646,7 @@ async function fetchOrderReports() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  loadOrderReportSettings();
   fetchOrderReports();
   initializeCalendar();
 });

@@ -869,9 +869,10 @@ function renderCategoryList() {
 
     const preview = document.createElement('div');
     preview.classList.add('category-tile-preview');
-    if (category.tileImageData) {
+    const tileImageSrc = category.tileImageUrl || category.tileImageData || '';
+    if (tileImageSrc) {
       const img = document.createElement('img');
-      img.src = category.tileImageData;
+      img.src = tileImageSrc;
       img.alt = category.tileImageAlt || category.name || '';
       preview.appendChild(img);
     } else {
@@ -879,14 +880,14 @@ function renderCategoryList() {
       placeholder.textContent = 'Brak grafiki';
       preview.appendChild(placeholder);
     }
-    tileControls.classList.toggle('category-tile-controls--empty', !category.tileImageData);
+    tileControls.classList.toggle('category-tile-controls--empty', !tileImageSrc);
 
     const tileActions = document.createElement('div');
     tileActions.classList.add('category-tile-actions');
 
     const uploadLabel = document.createElement('label');
     uploadLabel.classList.add('category-tile-upload');
-    uploadLabel.textContent = category.tileImageData ? 'Zmień grafikę' : 'Dodaj grafikę';
+    uploadLabel.textContent = tileImageSrc ? 'Zmień grafikę' : 'Dodaj grafikę';
 
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
@@ -906,7 +907,7 @@ function renderCategoryList() {
 
     tileActions.append(uploadLabel, altInput);
 
-    if (category.tileImageData) {
+    if (tileImageSrc) {
       const removeBtn = document.createElement('button');
       removeBtn.type = 'button';
       removeBtn.classList.add('category-tile-remove');
@@ -1387,9 +1388,9 @@ function applyAboutPreview(data) {
     return;
   }
 
-  const hasImage = data && data.heroImageData;
-  if (hasImage) {
-    aboutPreviewImage.src = data.heroImageData;
+  const imageSrc = data ? (data.heroImageUrl || data.heroImageData) : '';
+  if (imageSrc) {
+    aboutPreviewImage.src = imageSrc;
     aboutPreviewImage.hidden = false;
     aboutNoImagePlaceholder.hidden = true;
   } else {
@@ -1397,6 +1398,28 @@ function applyAboutPreview(data) {
     aboutPreviewImage.hidden = true;
     aboutNoImagePlaceholder.hidden = false;
   }
+}
+
+function getAboutPreviewSrc() {
+  if (!aboutPreviewImage) {
+    return '';
+  }
+  if (!aboutPreviewImage.hidden && aboutPreviewImage.src) {
+    return aboutPreviewImage.src;
+  }
+  const attributeSrc = aboutPreviewImage.getAttribute('src');
+  return attributeSrc || '';
+}
+
+function buildHeroReferenceFromPreview() {
+  const src = getAboutPreviewSrc();
+  if (!src) {
+    return {};
+  }
+  if (/^data:/i.test(src)) {
+    return { heroImageData: src };
+  }
+  return { heroImageUrl: src };
 }
 
 async function handleAboutFormSubmit(event) {
@@ -1480,28 +1503,53 @@ function handleAboutImageChange(event) {
   reader.readAsDataURL(file);
 }
 
+function getGalleryItemSrc(item) {
+  if (!item) {
+    return '';
+  }
+  if (item.imageUrl && typeof item.imageUrl === 'string') {
+    return item.imageUrl;
+  }
+  if (item.imageData && typeof item.imageData === 'string') {
+    return item.imageData;
+  }
+  return '';
+}
+
+function createInlineGalleryItem(src) {
+  if (!src) {
+    return null;
+  }
+  if (/^data:/i.test(src)) {
+    return { _id: null, imageData: src };
+  }
+  return { _id: null, imageUrl: src };
+}
+
 function buildHostGalleryItems(data) {
   if (!data) {
     return [];
   }
 
   const gallery = Array.isArray(data.gallery)
-    ? data.gallery.filter((item) => item && item.imageData)
+    ? data.gallery.filter((item) => getGalleryItemSrc(item))
     : [];
 
   const list = gallery.slice();
-  const heroCandidate = data.heroImageData
-    || (aboutPreviewImage && !aboutPreviewImage.hidden && aboutPreviewImage.src)
-    || (aboutPreviewImage && aboutPreviewImage.getAttribute('src'))
+  const heroCandidate = (data && (data.heroImageUrl || data.heroImageData))
+    || getAboutPreviewSrc()
     || '';
 
   if (heroCandidate) {
-    const existingIndex = list.findIndex((item) => item && item.imageData === heroCandidate);
+    const existingIndex = list.findIndex((item) => getGalleryItemSrc(item) === heroCandidate);
     if (existingIndex > 0) {
       const [heroItem] = list.splice(existingIndex, 1);
       list.unshift(heroItem);
     } else if (existingIndex === -1) {
-      list.unshift({ _id: null, imageData: heroCandidate });
+      const inlineItem = createInlineGalleryItem(heroCandidate);
+      if (inlineItem) {
+        list.unshift(inlineItem);
+      }
     }
   }
 
@@ -1526,14 +1574,15 @@ function renderAboutGallery(items) {
 
   const fragment = document.createDocumentFragment();
   aboutGalleryCache.forEach((item, index) => {
-    if (!item || !item.imageData) {
+    const src = getGalleryItemSrc(item);
+    if (!src) {
       return;
     }
     const figure = document.createElement('figure');
     figure.classList.add('host-gallery-item');
 
     const image = document.createElement('img');
-    image.src = item.imageData;
+    image.src = src;
     image.alt = `Zdjęcie galerii ${index + 1}`;
     figure.appendChild(image);
 
@@ -1591,10 +1640,11 @@ async function handleAboutGalleryFormSubmit(event) {
     }
 
     const data = await res.json();
-    renderAboutGallery(buildHostGalleryItems({
-      gallery: data && Array.isArray(data.gallery) ? data.gallery : [],
-      heroImageData: aboutPreviewImage && !aboutPreviewImage.hidden ? aboutPreviewImage.src : (aboutPreviewImage && aboutPreviewImage.getAttribute('src'))
-    }));
+    const heroReference = buildHeroReferenceFromPreview();
+    const galleryPayload = {
+      gallery: data && Array.isArray(data.gallery) ? data.gallery : []
+    };
+    renderAboutGallery(buildHostGalleryItems(Object.assign(galleryPayload, heroReference)));
     showAboutGalleryMessage('success', 'Zdjęcie dodane do galerii.');
     if (aboutGalleryImageInput) {
       aboutGalleryImageInput.value = '';
@@ -1635,10 +1685,11 @@ async function deleteAboutGalleryImage(imageId) {
     }
 
     const data = await res.json();
-    renderAboutGallery(buildHostGalleryItems({
-      gallery: data && Array.isArray(data.gallery) ? data.gallery : [],
-      heroImageData: aboutPreviewImage && !aboutPreviewImage.hidden ? aboutPreviewImage.src : (aboutPreviewImage && aboutPreviewImage.getAttribute('src'))
-    }));
+    const heroReference = buildHeroReferenceFromPreview();
+    const galleryPayload = {
+      gallery: data && Array.isArray(data.gallery) ? data.gallery : []
+    };
+    renderAboutGallery(buildHostGalleryItems(Object.assign(galleryPayload, heroReference)));
     showAboutGalleryMessage('success', 'Zdjęcie usunięte z galerii.');
   } catch (err) {
     console.error('Błąd usuwania zdjęcia z galerii:', err);
@@ -1646,4 +1697,3 @@ async function deleteAboutGalleryImage(imageId) {
     showAboutGalleryMessage('error', message);
   }
 }
-

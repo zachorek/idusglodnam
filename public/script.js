@@ -606,7 +606,9 @@ function renderCategoryTiles(categories) {
   }
 
   categoryTileList.innerHTML = '';
-  const tiles = Array.isArray(categories) ? categories.filter((category) => category && category.tileImageData) : [];
+  const tiles = Array.isArray(categories)
+    ? categories.filter((category) => category && (category.tileImageUrl || category.tileImageData))
+    : [];
   if (!tiles.length) {
     categoryTileStrip.classList.add('hidden');
     return;
@@ -625,7 +627,7 @@ function renderCategoryTiles(categories) {
     button.dataset.anchor = anchorId;
 
     const image = document.createElement('img');
-    image.src = category.tileImageData;
+    image.src = category.tileImageUrl || category.tileImageData;
     image.alt = category.tileImageAlt || category.name || '';
     image.classList.add('category-tile__image');
 
@@ -754,7 +756,7 @@ function renderProductsByCategory(categories, products) {
   });
   const categoriesForTiles = categoryList.filter((category) => {
     const items = categorized.get(category.name) || [];
-    return category && category.tileImageData && items.length;
+    return category && (category.tileImageUrl || category.tileImageData) && items.length;
   });
   renderCategoryTiles(categoriesForTiles);
 
@@ -1110,7 +1112,7 @@ function createProductCard(product) {
   card.setAttribute('role', 'button');
   card.setAttribute('aria-label', `Zobacz szczegóły produktu ${product.name || ''}`);
 
-  const imageSrc = product.imageData || product.imageUrl;
+  const imageSrc = product.imageUrl || product.imageData;
   if (imageSrc) {
     card.classList.add('product-card--with-image');
     const image = document.createElement('img');
@@ -1263,7 +1265,7 @@ function openProductModal(product) {
   const wrapper = document.createElement('div');
   wrapper.classList.add('modal-product');
 
-  const imageSrc = product.imageData || product.imageUrl;
+  const imageSrc = product.imageUrl || product.imageData;
   if (imageSrc) {
     const image = document.createElement('img');
     image.src = imageSrc;

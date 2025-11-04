@@ -4094,21 +4094,21 @@ body.about-gallery-zoom-open {
 }
 
 .category-tile-strip__list {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
-  justify-content: center;
+  justify-items: center;
 }
 
 .category-tile {
   position: relative;
   border: none;
   padding: 0;
-  border-radius: 18px;
+  border-radius: 32px / 22px;
   overflow: hidden;
   cursor: pointer;
   min-height: 220px;
-  width: 220px;
+  width: 100%;
   display: flex;
   flex-direction: column;
   align-items: stretch;

@@ -1,11 +1,57 @@
 const availabilityGrid = document.getElementById('availabilityGrid');
 const availabilityError = document.getElementById('availabilityError');
+const accessibilityHeroSection = document.querySelector('.accessibility-hero');
 
 const DAYS_OF_WEEK = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela'];
 
 window.addEventListener('DOMContentLoaded', () => {
+  loadAccessibilityHeroBackground();
   loadAvailabilitySchedule();
 });
+
+async function loadAccessibilityHeroBackground() {
+  if (!accessibilityHeroSection) {
+    return;
+  }
+
+  try {
+    const response = await fetch('/api/accessibility-content');
+    if (!response.ok) {
+      throw new Error('Nie udało się pobrać danych sekcji dostępności');
+    }
+
+    const data = await response.json();
+    applyAccessibilityHeroBackground(data);
+  } catch (error) {
+    console.error('Błąd pobierania tła sekcji dostępności:', error);
+    applyAccessibilityHeroBackground(null);
+  }
+}
+
+function applyAccessibilityHeroBackground(content) {
+  if (!accessibilityHeroSection) {
+    return;
+  }
+
+  const heroImage = (() => {
+    if (content && typeof content.heroImageUrl === 'string' && content.heroImageUrl.trim()) {
+      return content.heroImageUrl.trim();
+    }
+    if (content && typeof content.heroImageData === 'string' && content.heroImageData.trim()) {
+      return content.heroImageData.trim();
+    }
+    return '';
+  })();
+
+  if (heroImage) {
+    const sanitized = heroImage.replace(/"/g, '\\"');
+    accessibilityHeroSection.style.setProperty('--accessibility-hero-image', `url("${sanitized}")`);
+    accessibilityHeroSection.classList.add('accessibility-hero--with-image');
+  } else {
+    accessibilityHeroSection.style.removeProperty('--accessibility-hero-image');
+    accessibilityHeroSection.classList.remove('accessibility-hero--with-image');
+  }
+}
 
 async function loadAvailabilitySchedule() {
   if (!availabilityGrid) {

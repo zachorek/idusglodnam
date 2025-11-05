@@ -212,6 +212,7 @@ if (!SHOULD_SKIP_MONGO) {
 // MODELE
 const ALL_DAY_INDICES = [0, 1, 2, 3, 4, 5, 6];
 const DEFAULT_ABOUT_TEXT = 'Chachor Piecze to niewielki zespół piekarzy i cukierników, którzy robią codzienne wypieki w rytmie miasta.';
+const DEFAULT_ACCESSIBILITY_TAGLINE = 'Sprawdź, co serwujemy w poszczególne dni tygodnia i kiedy możesz odebrać swoje wypieki.';
 
 function normalizeAvailabilityDayArray(raw) {
   if (raw === undefined || raw === null) {
@@ -271,6 +272,17 @@ function normalizeAvailabilityDaysInput(raw) {
   }
 
   return normalizeAvailabilityDayArray([raw]);
+}
+
+function isTruthy(value) {
+  if (value === undefined || value === null) {
+    return false;
+  }
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  return ['1', 'true', 'yes', 'on'].includes(normalized);
 }
 
 const Product = mongoose.model('Product', new mongoose.Schema({
@@ -334,6 +346,12 @@ const AboutContent = mongoose.model('AboutContent', new mongoose.Schema({
   heroImageKey: { type: String, default: '' },
   heroText: { type: String, default: '' },
   gallery: { type: [aboutGalleryItemSchema], default: [] }
+}, { timestamps: true }));
+
+const AccessibilityContent = mongoose.model('AccessibilityContent', new mongoose.Schema({
+  heroImageData: { type: String, default: '' },
+  heroImageUrl: { type: String, default: '' },
+  heroImageKey: { type: String, default: '' }
 }, { timestamps: true }));
 
 // Per-product per-day stock (capacity and reserved)
@@ -1301,6 +1319,84 @@ app.get('/api/products', async (req, res) => {
     res.json(products);
   } catch (err) {
     res.status(500).json({ error: 'Błąd pobierania produktów' });
+  }
+});
+
+app.get('/api/accessibility-content', async (req, res) => {
+  try {
+    const content = await AccessibilityContent.findOne().lean();
+    res.json({
+      heroImageData: content && content.heroImageData ? content.heroImageData : '',
+      heroImageUrl: content && content.heroImageUrl ? content.heroImageUrl : '',
+      tagline: DEFAULT_ACCESSIBILITY_TAGLINE
+    });
+  } catch (err) {
+    console.error('Błąd pobierania sekcji dostępności:', err);
+    res.status(500).json({ error: 'Błąd pobierania sekcji dostępności' });
+  }
+});
+
+app.post('/api/accessibility-content', upload.single('accessibilityHeroImage'), async (req, res) => {
+  try {
+    const shouldRemoveImage = isTruthy(req.body && req.body.removeImage);
+    const hasNewImage = Boolean(req.file);
+
+    if (!hasNewImage && !shouldRemoveImage) {
+      return res.status(400).json({ error: 'Brak danych do zapisania' });
+    }
+
+    const updateSet = {};
+    let uploadedHeroImage = null;
+    let previousContent = null;
+
+    if (hasNewImage || shouldRemoveImage) {
+      previousContent = await AccessibilityContent.findOne();
+    }
+
+    if (hasNewImage) {
+      try {
+        uploadedHeroImage = await uploadImageToCloudflare(req.file.buffer, req.file.mimetype, 'accessibility/hero');
+      } catch (uploadErr) {
+        console.error('Błąd przesyłania zdjęcia sekcji dostępności do Cloudflare:', uploadErr);
+        return res.status(500).json({ error: 'Nie udało się zapisać zdjęcia sekcji.' });
+      }
+      updateSet.heroImageUrl = uploadedHeroImage.url;
+      updateSet.heroImageKey = uploadedHeroImage.key;
+      updateSet.heroImageData = '';
+    }
+
+    if (shouldRemoveImage && !hasNewImage) {
+      updateSet.heroImageUrl = '';
+      updateSet.heroImageKey = '';
+      updateSet.heroImageData = '';
+    }
+
+    const content = await AccessibilityContent.findOneAndUpdate(
+      {},
+      { $set: updateSet },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    ).lean();
+
+    if (uploadedHeroImage && previousContent) {
+      const previousKey = previousContent.heroImageKey || previousContent.heroImageUrl;
+      if (previousKey && previousKey !== uploadedHeroImage.key) {
+        await deleteImageFromCloudflare(previousKey);
+      }
+    } else if (shouldRemoveImage && !hasNewImage && previousContent) {
+      const previousKey = previousContent.heroImageKey || previousContent.heroImageUrl;
+      if (previousKey) {
+        await deleteImageFromCloudflare(previousKey);
+      }
+    }
+
+    res.json({
+      heroImageData: content && content.heroImageData ? content.heroImageData : '',
+      heroImageUrl: content && content.heroImageUrl ? content.heroImageUrl : '',
+      tagline: DEFAULT_ACCESSIBILITY_TAGLINE
+    });
+  } catch (err) {
+    console.error('Błąd zapisu sekcji dostępności:', err);
+    res.status(500).json({ error: 'Nie udało się zapisać sekcji dostępności' });
   }
 });
 

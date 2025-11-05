@@ -114,6 +114,34 @@
       <div id="categoryList" class="host-category-list"></div>
     </section>
 
+    <section class="host-accessibility-section glass-panel host-card">
+      <div class="host-availability-header">
+        <h2>Sekcja "Dostępność i odbiory"</h2>
+        <p>Dodaj lub zmień zdjęcie w tle hero, które otwiera stronę dostępności.</p>
+      </div>
+
+      <form id="accessibilityHeroForm" class="host-about-form" enctype="multipart/form-data">
+        <label class="about-field">
+          <span>Zdjęcie w tle</span>
+          <input type="file" id="accessibilityHeroImage" name="accessibilityHeroImage" accept="image/*">
+        </label>
+        <div class="host-form-actions">
+          <button type="submit" class="host-primary-btn">Zapisz zdjęcie</button>
+          <button type="button" class="host-secondary-btn" id="accessibilityHeroRemove">Usuń zdjęcie</button>
+        </div>
+      </form>
+
+      <div id="accessibilityHeroMessage" class="host-message" aria-live="polite"></div>
+
+      <div class="host-about-preview host-accessibility-preview">
+        <figure>
+          <img id="accessibilityHeroPreviewImage" alt="Podgląd tła sekcji Dostępność i odbiory" hidden>
+          <span id="accessibilityHeroNoImagePlaceholder">Brak zdjęcia — dodaj plik, by zaktualizować sekcję.</span>
+        </figure>
+        <p class="host-about-preview__text" id="accessibilityHeroPreviewText">Dostępność i odbiory. Sprawdź, co serwujemy w poszczególne dni tygodnia i kiedy możesz odebrać swoje wypieki.</p>
+      </div>
+    </section>
+
     <section class="host-availability-section glass-panel host-card host-card--wide">
       <div class="host-availability-header">
         <h2>Dostępność tygodniowa</h2>

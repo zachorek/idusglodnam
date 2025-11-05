@@ -26,6 +26,13 @@ const aboutGalleryForm = document.getElementById("aboutGalleryForm");
 const aboutGalleryImageInput = document.getElementById("aboutGalleryImage");
 const aboutGalleryList = document.getElementById("aboutGalleryList");
 const aboutGalleryMessage = document.getElementById("aboutGalleryMessage");
+const accessibilityHeroForm = document.getElementById("accessibilityHeroForm");
+const accessibilityHeroImageInput = document.getElementById("accessibilityHeroImage");
+const accessibilityHeroMessage = document.getElementById("accessibilityHeroMessage");
+const accessibilityHeroPreviewImage = document.getElementById("accessibilityHeroPreviewImage");
+const accessibilityHeroNoImagePlaceholder = document.getElementById("accessibilityHeroNoImagePlaceholder");
+const accessibilityHeroRemoveButton = document.getElementById("accessibilityHeroRemove");
+const accessibilityHeroPreviewText = document.getElementById("accessibilityHeroPreviewText");
 
 const PRODUCTS_CACHE_KEY = 'chachor.productsCache';
 
@@ -33,12 +40,14 @@ const DAYS_OF_WEEK = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek'
 const PRODUCT_DAY_ABBREVIATIONS = ['PN', 'WT', 'ŚR', 'CZ', 'PT', 'SO', 'ND'];
 const MAX_AVAILABILITY_TILES = 6;
 const DEFAULT_ABOUT_TEXT = 'Chachor Piecze to niewielki zespół piekarzy i cukierników, którzy robią codzienne wypieki w rytmie miasta.';
+const DEFAULT_ACCESSIBILITY_TAGLINE = 'Sprawdź, co serwujemy w poszczególne dni tygodnia i kiedy możesz odebrać swoje wypieki.';
 
 let categoriesCache = [];
 let discountCodesCache = [];
 let productGridListenerAttached = false;
 let availabilityMessageTimer = null;
 let aboutGalleryCache = [];
+let accessibilityHeroCurrentImageSrc = '';
 
 if (categoryList) {
   fetchCategories();
@@ -88,6 +97,22 @@ if (aboutGalleryList) {
   aboutGalleryList.addEventListener('click', handleAboutGalleryListClick);
 }
 
+if (accessibilityHeroImageInput) {
+  accessibilityHeroImageInput.addEventListener('change', handleAccessibilityHeroImageChange);
+}
+
+if (accessibilityHeroForm) {
+  accessibilityHeroForm.addEventListener('submit', handleAccessibilityHeroFormSubmit);
+}
+
+if (accessibilityHeroRemoveButton) {
+  accessibilityHeroRemoveButton.addEventListener('click', handleAccessibilityHeroRemove);
+}
+
+if (accessibilityHeroPreviewText) {
+  accessibilityHeroPreviewText.textContent = `Dostępność i odbiory. ${DEFAULT_ACCESSIBILITY_TAGLINE}`;
+}
+
 function truncateText(text, maxLength) {
   if (!text) {
     return '';
@@ -99,6 +124,7 @@ function truncateText(text, maxLength) {
   return `${trimmed.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
 }
 
+fetchAccessibilityContent();
 fetchAboutContent();
 
 if (categoryForm) {
@@ -1356,6 +1382,246 @@ function normalizeDiscountCode(value) {
     .trim()
     .replace(/\s+/g, '')
     .toUpperCase();
+}
+
+function resolveAccessibilityHeroImageSource(data) {
+  if (!data || typeof data !== 'object') {
+    return '';
+  }
+  if (typeof data.heroImageUrl === 'string' && data.heroImageUrl.trim()) {
+    return data.heroImageUrl.trim();
+  }
+  if (typeof data.heroImageData === 'string' && data.heroImageData.trim()) {
+    return data.heroImageData.trim();
+  }
+  return '';
+}
+
+function setAccessibilityHeroPreview(imageSrc) {
+  if (!accessibilityHeroPreviewImage) {
+    return;
+  }
+
+  if (imageSrc) {
+    accessibilityHeroPreviewImage.src = imageSrc;
+    accessibilityHeroPreviewImage.hidden = false;
+    if (accessibilityHeroNoImagePlaceholder) {
+      accessibilityHeroNoImagePlaceholder.hidden = true;
+    }
+  } else {
+    accessibilityHeroPreviewImage.removeAttribute('src');
+    accessibilityHeroPreviewImage.hidden = true;
+    if (accessibilityHeroNoImagePlaceholder) {
+      accessibilityHeroNoImagePlaceholder.hidden = false;
+    }
+  }
+}
+
+function updateAccessibilityHeroRemoveState(hasStoredImage) {
+  if (!accessibilityHeroRemoveButton) {
+    return;
+  }
+  accessibilityHeroRemoveButton.disabled = !hasStoredImage;
+}
+
+function showAccessibilityHeroMessage(type, message) {
+  if (!accessibilityHeroMessage) {
+    return;
+  }
+
+  accessibilityHeroMessage.textContent = message || '';
+  if (!message) {
+    accessibilityHeroMessage.style.color = '';
+    return;
+  }
+
+  const colorMap = {
+    success: '#2d7a46',
+    error: '#c62828',
+    info: '#6b4a34'
+  };
+  accessibilityHeroMessage.style.color = colorMap[type] || colorMap.info;
+}
+
+function applyAccessibilityHeroPreview(data) {
+  const normalizedData = data && typeof data === 'object' ? data : null;
+  const tagline = normalizedData && typeof normalizedData.tagline === 'string' && normalizedData.tagline.trim()
+    ? normalizedData.tagline.trim()
+    : DEFAULT_ACCESSIBILITY_TAGLINE;
+  if (accessibilityHeroPreviewText) {
+    accessibilityHeroPreviewText.textContent = `Dostępność i odbiory. ${tagline}`;
+  }
+  accessibilityHeroCurrentImageSrc = resolveAccessibilityHeroImageSource(normalizedData);
+  setAccessibilityHeroPreview(accessibilityHeroCurrentImageSrc);
+  updateAccessibilityHeroRemoveState(Boolean(accessibilityHeroCurrentImageSrc));
+}
+
+async function fetchAccessibilityContent() {
+  if (!accessibilityHeroForm && !accessibilityHeroPreviewImage && !accessibilityHeroMessage) {
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/accessibility-content');
+    if (!res.ok) {
+      throw new Error('Błąd pobierania sekcji dostępności');
+    }
+
+    const data = await res.json();
+    applyAccessibilityHeroPreview(data);
+    showAccessibilityHeroMessage(null, '');
+  } catch (err) {
+    console.error('Błąd pobierania sekcji dostępności:', err);
+    applyAccessibilityHeroPreview(null);
+    showAccessibilityHeroMessage('error', 'Nie udało się pobrać danych sekcji dostępności.');
+  }
+}
+
+function handleAccessibilityHeroImageChange(event) {
+  const input = event ? event.target : null;
+  if (!input || !input.files) {
+    updateAccessibilityHeroRemoveState(Boolean(accessibilityHeroCurrentImageSrc));
+    return;
+  }
+
+  if (!input.files.length) {
+    setAccessibilityHeroPreview(accessibilityHeroCurrentImageSrc);
+    updateAccessibilityHeroRemoveState(Boolean(accessibilityHeroCurrentImageSrc));
+    return;
+  }
+
+  const file = input.files[0];
+  if (!file || typeof FileReader === 'undefined') {
+    setAccessibilityHeroPreview(accessibilityHeroCurrentImageSrc);
+    updateAccessibilityHeroRemoveState(Boolean(accessibilityHeroCurrentImageSrc));
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    if (typeof reader.result === 'string') {
+      setAccessibilityHeroPreview(reader.result);
+    }
+    updateAccessibilityHeroRemoveState(Boolean(accessibilityHeroCurrentImageSrc));
+  };
+  reader.onerror = () => {
+    console.error('Nie udało się odczytać pliku zdjęcia sekcji dostępności.');
+    setAccessibilityHeroPreview(accessibilityHeroCurrentImageSrc);
+    updateAccessibilityHeroRemoveState(Boolean(accessibilityHeroCurrentImageSrc));
+  };
+  reader.readAsDataURL(file);
+  updateAccessibilityHeroRemoveState(Boolean(accessibilityHeroCurrentImageSrc));
+}
+
+async function handleAccessibilityHeroFormSubmit(event) {
+  event.preventDefault();
+
+  if (!accessibilityHeroForm) {
+    return;
+  }
+
+  const file = accessibilityHeroImageInput && accessibilityHeroImageInput.files
+    ? accessibilityHeroImageInput.files[0]
+    : null;
+
+  if (!file) {
+    showAccessibilityHeroMessage('error', 'Wybierz zdjęcie, aby zapisać sekcję.');
+    if (accessibilityHeroImageInput) {
+      accessibilityHeroImageInput.focus();
+    }
+    return;
+  }
+
+  const submitButton = accessibilityHeroForm.querySelector('button[type="submit"]');
+  if (submitButton) {
+    submitButton.disabled = true;
+  }
+  if (accessibilityHeroRemoveButton) {
+    accessibilityHeroRemoveButton.disabled = true;
+  }
+  showAccessibilityHeroMessage('info', 'Zapisuję zdjęcie...');
+
+  const formData = new FormData();
+  formData.append('accessibilityHeroImage', file);
+
+  try {
+    const res = await fetch('/api/accessibility-content', {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({}));
+      throw new Error(error && error.error ? error.error : 'Błąd zapisu zdjęcia sekcji.');
+    }
+
+    const data = await res.json();
+    applyAccessibilityHeroPreview(data);
+    if (accessibilityHeroImageInput) {
+      accessibilityHeroImageInput.value = '';
+    }
+    showAccessibilityHeroMessage('success', 'Zapisano zdjęcie sekcji dostępności.');
+  } catch (err) {
+    console.error('Błąd zapisu sekcji dostępności:', err);
+    showAccessibilityHeroMessage('error', err && err.message ? err.message : 'Nie udało się zapisać zdjęcia sekcji.');
+    setAccessibilityHeroPreview(accessibilityHeroCurrentImageSrc);
+  } finally {
+    if (submitButton) {
+      submitButton.disabled = false;
+    }
+    updateAccessibilityHeroRemoveState(Boolean(accessibilityHeroCurrentImageSrc));
+  }
+}
+
+async function handleAccessibilityHeroRemove(event) {
+  event.preventDefault();
+
+  if (!accessibilityHeroForm || !accessibilityHeroCurrentImageSrc) {
+    return;
+  }
+
+  if (!confirm('Na pewno chcesz usunąć zdjęcie sekcji?')) {
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('removeImage', 'true');
+
+  const submitButton = accessibilityHeroForm.querySelector('button[type="submit"]');
+  if (submitButton) {
+    submitButton.disabled = true;
+  }
+  if (accessibilityHeroRemoveButton) {
+    accessibilityHeroRemoveButton.disabled = true;
+  }
+  showAccessibilityHeroMessage('info', 'Usuwam zdjęcie...');
+
+  try {
+    const res = await fetch('/api/accessibility-content', {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({}));
+      throw new Error(error && error.error ? error.error : 'Błąd usuwania zdjęcia sekcji.');
+    }
+
+    const data = await res.json();
+    applyAccessibilityHeroPreview(data);
+    if (accessibilityHeroImageInput) {
+      accessibilityHeroImageInput.value = '';
+    }
+    showAccessibilityHeroMessage('success', 'Usunięto zdjęcie sekcji dostępności.');
+  } catch (err) {
+    console.error('Błąd usuwania zdjęcia sekcji dostępności:', err);
+    showAccessibilityHeroMessage('error', err && err.message ? err.message : 'Nie udało się usunąć zdjęcia sekcji.');
+  } finally {
+    if (submitButton) {
+      submitButton.disabled = false;
+    }
+    updateAccessibilityHeroRemoveState(Boolean(accessibilityHeroCurrentImageSrc));
+  }
 }
 
 async function fetchAboutContent() {

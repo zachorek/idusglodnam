@@ -21,7 +21,7 @@
   </ul>
   <div class="nav-right">
     <a href="/cart" class="cart">
-      👜 Koszyk <span id="cartCount">0</span>
+      Koszyk <span id="cartCount">0</span>
     </a>
   </div>
   </nav>
@@ -137,6 +137,12 @@
   </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/pl.js"></script>
+  <script>
+    if (window.flatpickr && window.flatpickr.localize && window.flatpickr.l10ns && window.flatpickr.l10ns.pl) {
+      window.flatpickr.localize(Object.assign({}, window.flatpickr.l10ns.pl, { firstDayOfWeek: 1 }));
+    }
+  </script>
   <script src="script.js"></script>
   <script>
     (function updateFooterYears() {

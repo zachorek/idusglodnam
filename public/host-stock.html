@@ -88,6 +88,12 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/pl.js"></script>
+  <script>
+    if (window.flatpickr && window.flatpickr.localize && window.flatpickr.l10ns && window.flatpickr.l10ns.pl) {
+      window.flatpickr.localize(Object.assign({}, window.flatpickr.l10ns.pl, { firstDayOfWeek: 1 }));
+    }
+  </script>
   <script src="host-stock.js"></script>
 </body>
 </html>

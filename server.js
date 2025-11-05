@@ -190,6 +190,11 @@ const upload = multer({
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+app.get('/', (req, res) => {
+  res.redirect('/about');
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Połączenie z MongoDB Atlas
@@ -2082,11 +2087,6 @@ app.delete('/api/discount-codes/:id', async (req, res) => {
 // -------------------------
 // Obsługa ładnych ścieżek
 // -------------------------
-
-// Strona główna
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
 
 // Ścieżki bez .html
 app.get('/:page', (req, res, next) => {

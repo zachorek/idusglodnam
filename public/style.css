@@ -1,11 +1,25 @@
-.order-filters {
-  margin: 4px auto 8px;
+/* Order toolbar */
+.order-toolbar {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+  margin: 12px 0 18px;
+}
+
+.order-toolbar .same-day-note {
+  flex: none;
+  margin: 0;
   width: 100%;
-  max-width: 720px;
-  justify-content: flex-start;
+}
+
+.order-toolbar .order-filters {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  flex: none;
 }
 
 .order-filter {

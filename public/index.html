@@ -37,20 +37,22 @@
       <div id="categoryTileStrip" class="category-tile-strip hidden" aria-label="Kategorie menu">
         <div id="categoryTileList" class="category-tile-strip__list"></div>
       </div>
-      <div class="same-day-note" role="status" aria-live="polite">
-        <p class="same-day-note__lead">Wygodnie zamów pieczywo na każdy dzień tygodnia i odbierz je u Chachora!</p>
-        <p class="same-day-note__info">Sprawdź dostępność twojego ulubionego wypieku w wybranym dniu w miesiącu!</p>
-      </div>
-      <div class="order-filters" role="group" aria-label="Opcje filtrowania zamówienia">
-        <div class="order-filter order-filter--date">
-          <label for="menuPickupDate" class="order-filter__label">Filtruj według daty odbioru</label>
-          <div class="order-filter__control">
-            <input type="text" id="menuPickupDate" name="menuPickupDate" class="order-filter__input" placeholder="Wybierz datę" readonly>
-            <button type="button" id="menuPickupClear" class="order-filter__clear" aria-label="Wyczyść filtr daty" disabled>
-              Wyczyść filtr
-            </button>
+      <div class="order-toolbar">
+        <div class="same-day-note" role="status" aria-live="polite">
+          <p class="same-day-note__lead">Wygodnie zamów pieczywo na każdy dzień tygodnia i odbierz je u Chachora!</p>
+          <p class="same-day-note__info">Sprawdź dostępność twojego ulubionego wypieku w wybranym dniu w miesiącu!</p>
+        </div>
+        <div class="order-filters" role="group" aria-label="Opcje filtrowania zamówienia">
+          <div class="order-filter order-filter--date">
+            <label for="menuPickupDate" class="order-filter__label">Filtruj według daty odbioru</label>
+            <div class="order-filter__control">
+              <input type="text" id="menuPickupDate" name="menuPickupDate" class="order-filter__input" placeholder="Wybierz datę" readonly>
+              <button type="button" id="menuPickupClear" class="order-filter__clear" aria-label="Wyczyść filtr daty" disabled>
+                Wyczyść filtr
+              </button>
+            </div>
+            <div id="menuCalendarContainer" class="order-date-calendar" hidden></div>
           </div>
-          <div id="menuCalendarContainer" class="order-date-calendar" hidden></div>
         </div>
       </div>
       <div id="productGrid" class="category-container"></div>

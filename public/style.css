@@ -4217,6 +4217,8 @@ body.about-gallery-zoom-open {
   text-transform: uppercase;
   letter-spacing: 0.02em;
   text-align: left;
+  font-family: "TAN-- PEARL", "Segoe UI", sans-serif;
+  font-size: 1.25rem;
 }
 
 @media (max-width: 600px) {

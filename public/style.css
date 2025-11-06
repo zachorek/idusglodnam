@@ -4170,10 +4170,10 @@ body.about-gallery-zoom-open {
   position: relative;
   border: none;
   padding: 0;
-  border-radius: 32px / 22px;
+  border-radius: 50px / 28px;
   overflow: hidden;
   cursor: pointer;
-  min-height: 220px;
+  min-height: 280px;
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -4210,7 +4210,7 @@ body.about-gallery-zoom-open {
   position: relative;
   z-index: 1;
   width: 100%;
-  padding: 18px 16px;
+  padding: 24px 20px 20px;
   background: linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.65) 100%);
   color: #fff;
   font-weight: 700;
@@ -4218,7 +4218,8 @@ body.about-gallery-zoom-open {
   letter-spacing: 0.02em;
   text-align: left;
   font-family: "TAN-- PEARL", "Segoe UI", sans-serif;
-  font-size: 1.25rem;
+  font-size: 1.15rem;
+  line-height: 1.1;
 }
 
 @media (max-width: 600px) {
@@ -4233,7 +4234,7 @@ body.about-gallery-zoom-open {
   }
   .category-tile {
     width: 100%;
-    min-height: 185px;
+    min-height: 220px;
   }
 }
 

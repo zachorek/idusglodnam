@@ -881,6 +881,10 @@ function createHostProductCard(product) {
   if (product && product._id) {
     card.dataset.productId = product._id;
   }
+  const isBlocked = Boolean(product && product.isBlocked);
+  if (isBlocked) {
+    card.classList.add('host-product-card--blocked');
+  }
 
   const imageSrc = product.imageUrl || product.imageData || '';
   if (imageSrc) {
@@ -896,6 +900,13 @@ function createHostProductCard(product) {
 
   const info = document.createElement('div');
   info.className = 'product-info host-product-info';
+
+  if (isBlocked) {
+    const statusBadge = document.createElement('span');
+    statusBadge.className = 'host-product-status-badge';
+    statusBadge.textContent = 'Produkt ukryty w menu';
+    info.appendChild(statusBadge);
+  }
 
   const title = document.createElement('h3');
   title.textContent = product.name || 'Produkt';
@@ -925,6 +936,14 @@ function createHostProductCard(product) {
   editButton.className = 'host-secondary-btn edit-product-btn host-product-action';
   editButton.textContent = 'Edytuj kafelek';
   actions.appendChild(editButton);
+
+  const blockButton = document.createElement('button');
+  blockButton.type = 'button';
+  blockButton.dataset.id = product._id;
+  blockButton.dataset.blocked = isBlocked ? 'true' : 'false';
+  blockButton.className = `host-secondary-btn block-product-btn host-product-action${isBlocked ? ' block-product-btn--active' : ''}`;
+  blockButton.textContent = isBlocked ? 'Odblokuj produkt' : 'Zablokuj produkt';
+  actions.appendChild(blockButton);
 
   const deleteButton = document.createElement('button');
   deleteButton.type = 'button';
@@ -960,6 +979,50 @@ function updateHostProductsCache(updatedProduct) {
 
   if (!found) {
     hostProductsCache.push(updatedProduct);
+  }
+}
+
+async function toggleProductBlockState(productId, shouldBlock, button) {
+  if (!productId) {
+    return;
+  }
+
+  const targetLabel = shouldBlock ? 'blokuję...' : 'odblokowuję...';
+  const originalText = button ? button.textContent : '';
+  if (button) {
+    button.disabled = true;
+    button.textContent = targetLabel;
+  }
+  setProductEditMessage && setProductEditMessage('');
+
+  try {
+    const res = await fetch(`/api/products/${productId}/block`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isBlocked: shouldBlock })
+    });
+
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({}));
+      throw new Error(payload.error || 'Nie udało się zmienić statusu produktu.');
+    }
+
+    const updatedProduct = await res.json();
+    updateHostProductsCache(updatedProduct);
+    renderHostProductsFromCache();
+    invalidateStorefrontProductsCache();
+    if (hostMessage) {
+      const actionInfo = shouldBlock ? 'zablokowano' : 'odblokowano';
+      hostMessage.innerHTML = `<p style="color:green">Pomyślnie ${actionInfo} produkt "${updatedProduct.name || ''}".</p>`;
+    }
+  } catch (err) {
+    console.error('Błąd zmiany statusu produktu:', err);
+    alert(err.message || 'Nie udało się zmienić statusu produktu.');
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText || (shouldBlock ? 'Zablokuj produkt' : 'Odblokuj produkt');
+    }
   }
 }
 
@@ -1289,6 +1352,17 @@ async function handleProductGridClick(event) {
       if (product) {
         openProductEditModal(product);
       }
+    }
+    return;
+  }
+
+  const blockButton = event.target.closest('.block-product-btn');
+  if (blockButton) {
+    const { id } = blockButton.dataset;
+    if (id) {
+      const isCurrentlyBlocked = blockButton.dataset.blocked === 'true';
+      const targetState = !isCurrentlyBlocked;
+      await toggleProductBlockState(id, targetState, blockButton);
     }
     return;
   }

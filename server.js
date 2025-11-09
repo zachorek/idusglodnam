@@ -11,6 +11,7 @@ const {
   PutObjectCommand,
   DeleteObjectCommand
 } = require('@aws-sdk/client-s3');
+const heicConvert = require('heic-convert');
 require('dotenv').config();
 
 const app = express();
@@ -174,6 +175,40 @@ async function deleteImageFromCloudflare(storedKeyOrUrl) {
   }
 }
 
+const HEIC_MIME_REGEX = /^image\/hei[cf]/i;
+
+async function normalizeUploadedImage(file) {
+  if (!file || !file.buffer) {
+    throw new Error('Brak zdjęcia do zapisania.');
+  }
+  const mimetype = typeof file.mimetype === 'string' ? file.mimetype : '';
+  if (HEIC_MIME_REGEX.test(mimetype)) {
+    try {
+      const convertedBuffer = await heicConvert({
+        buffer: file.buffer,
+        format: 'JPEG',
+        quality: 1
+      });
+      return {
+        buffer: Buffer.from(convertedBuffer),
+        mimetype: 'image/jpeg'
+      };
+    } catch (err) {
+      console.error('Błąd konwersji HEIC na JPEG:', err);
+      throw new Error('Nie udało się przetworzyć zdjęcia HEIC. Spróbuj ponownie z JPG lub PNG.');
+    }
+  }
+  return {
+    buffer: file.buffer,
+    mimetype: mimetype || 'application/octet-stream'
+  };
+}
+
+async function uploadNormalizedImage(file, prefix) {
+  const processed = await normalizeUploadedImage(file);
+  return uploadImageToCloudflare(processed.buffer, processed.mimetype, prefix);
+}
+
 const storage = multer.memoryStorage();
 
 const upload = multer({
@@ -298,6 +333,7 @@ const Product = mongoose.model('Product', new mongoose.Schema({
   imageData: String,
   imageUrl: String,
   imageKey: String,
+  isBlocked: { type: Boolean, default: false },
   availabilityDays: {
     type: [Number],
     default: [],
@@ -1360,7 +1396,7 @@ app.post('/api/accessibility-content', upload.single('accessibilityHeroImage'), 
 
     if (hasNewImage) {
       try {
-        uploadedHeroImage = await uploadImageToCloudflare(req.file.buffer, req.file.mimetype, 'accessibility/hero');
+        uploadedHeroImage = await uploadNormalizedImage(req.file, 'accessibility/hero');
       } catch (uploadErr) {
         console.error('Błąd przesyłania zdjęcia sekcji dostępności do Cloudflare:', uploadErr);
         return res.status(500).json({ error: 'Nie udało się zapisać zdjęcia sekcji.' });
@@ -1672,7 +1708,7 @@ app.post('/api/products', upload.single('image'), async (req, res) => {
 
     let uploadedImage;
     try {
-      uploadedImage = await uploadImageToCloudflare(req.file.buffer, req.file.mimetype, 'products');
+      uploadedImage = await uploadNormalizedImage(req.file, 'products');
     } catch (uploadErr) {
       console.error('Błąd przesyłania zdjęcia produktu do Cloudflare:', uploadErr);
       return res.status(500).json({ error: 'Nie udało się zapisać zdjęcia produktu.' });
@@ -1738,7 +1774,7 @@ app.put('/api/products/:id', upload.single('image'), async (req, res) => {
 
     if (req.file) {
       try {
-        uploadedImage = await uploadImageToCloudflare(req.file.buffer, req.file.mimetype, 'products');
+        uploadedImage = await uploadNormalizedImage(req.file, 'products');
       } catch (uploadErr) {
         console.error('Błąd przesyłania nowego zdjęcia produktu do Cloudflare:', uploadErr);
         return res.status(500).json({ error: 'Nie udało się zapisać zdjęcia produktu.' });
@@ -1767,6 +1803,29 @@ app.put('/api/products/:id', upload.single('image'), async (req, res) => {
   }
 });
 
+app.patch('/api/products/:id/block', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const product = await Product.findById(id);
+    if (!product) {
+      return res.status(404).json({ error: 'Produkt nie istnieje' });
+    }
+
+    const { isBlocked } = req.body || {};
+    if (typeof isBlocked !== 'boolean') {
+      return res.status(400).json({ error: 'Brak prawidłowego statusu blokady.' });
+    }
+
+    product.isBlocked = isBlocked;
+    await product.save();
+    invalidateProductsCache();
+    res.json(product.toObject());
+  } catch (err) {
+    console.error('Błąd zmiany statusu produktu:', err);
+    res.status(500).json({ error: 'Nie udało się zmienić statusu produktu' });
+  }
+});
+
 app.post('/api/about', upload.single('aboutImage'), async (req, res) => {
   try {
     const text = typeof req.body.aboutText === 'string' ? req.body.aboutText.trim() : '';
@@ -1782,7 +1841,7 @@ app.post('/api/about', upload.single('aboutImage'), async (req, res) => {
     if (req.file) {
       previousAboutDoc = await AboutContent.findOne();
       try {
-        uploadedHeroImage = await uploadImageToCloudflare(req.file.buffer, req.file.mimetype, 'about/hero');
+        uploadedHeroImage = await uploadNormalizedImage(req.file, 'about/hero');
       } catch (uploadErr) {
         console.error('Błąd przesyłania zdjęcia sekcji O nas do Cloudflare:', uploadErr);
         return res.status(500).json({ error: 'Nie udało się zapisać zdjęcia sekcji.' });
@@ -1834,7 +1893,7 @@ app.post('/api/about/gallery', upload.single('galleryImage'), async (req, res) =
     }
     let uploadedImage = null;
     try {
-      uploadedImage = await uploadImageToCloudflare(req.file.buffer, req.file.mimetype, 'about/gallery');
+      uploadedImage = await uploadNormalizedImage(req.file, 'about/gallery');
     } catch (uploadErr) {
       console.error('Błąd przesyłania zdjęcia galerii do Cloudflare:', uploadErr);
       return res.status(500).json({ error: 'Nie udało się zapisać zdjęcia galerii.' });
@@ -1943,7 +2002,7 @@ app.put('/api/categories/:id/tile-image', upload.single('tileImage'), async (req
     let previousAssetReference = null;
     if (req.file) {
       try {
-        const uploadedImage = await uploadImageToCloudflare(req.file.buffer, req.file.mimetype, 'categories/tiles');
+        const uploadedImage = await uploadNormalizedImage(req.file, 'categories/tiles');
         previousAssetReference = category.tileImageKey || category.tileImageUrl;
         category.tileImageUrl = uploadedImage.url;
         category.tileImageKey = uploadedImage.key;

@@ -573,11 +573,12 @@ function filterProductsForMenu(products) {
   if (!Array.isArray(products)) {
     return [];
   }
+  const visibleProducts = products.filter((product) => product && product.isBlocked !== true);
   if (typeof activeMenuAvailabilityFilter !== 'number') {
-    return products;
+    return visibleProducts;
   }
 
-  return products.filter((product) => {
+  return visibleProducts.filter((product) => {
     const availability = normalizeAvailabilityDaysForRender(product.availabilityDays);
     if (availability.daily) {
       return true;

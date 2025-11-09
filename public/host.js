@@ -33,6 +33,22 @@ const accessibilityHeroPreviewImage = document.getElementById("accessibilityHero
 const accessibilityHeroNoImagePlaceholder = document.getElementById("accessibilityHeroNoImagePlaceholder");
 const accessibilityHeroRemoveButton = document.getElementById("accessibilityHeroRemove");
 const accessibilityHeroPreviewText = document.getElementById("accessibilityHeroPreviewText");
+const productEditModal = document.getElementById("productEditModal");
+const productEditForm = document.getElementById("productEditForm");
+const productEditNameInput = document.getElementById("productEditName");
+const productEditPriceInput = document.getElementById("productEditPrice");
+const productEditDescInput = document.getElementById("productEditDesc");
+const productEditCategorySelect = document.getElementById("productEditCategory");
+const productEditAvailabilityDays = document.getElementById("productEditAvailabilityDays");
+const productEditAvailabilityAll = document.getElementById("productEditAvailabilityAll");
+const productEditImageInput = document.getElementById("productEditImage");
+const productEditImagePreview = document.getElementById("productEditImagePreview");
+const productEditImagePlaceholder = document.getElementById("productEditImagePlaceholder");
+const productEditMessage = document.getElementById("productEditMessage");
+const productEditCloseButton = document.getElementById("productEditClose");
+const productEditCancelButton = document.getElementById("productEditCancel");
+const productEditModalTitle = document.getElementById("productEditModalTitle");
+const productEditModalSubtitle = document.getElementById("productEditModalSubtitle");
 
 const PRODUCTS_CACHE_KEY = 'chachor.productsCache';
 
@@ -48,6 +64,10 @@ let productGridListenerAttached = false;
 let availabilityMessageTimer = null;
 let aboutGalleryCache = [];
 let accessibilityHeroCurrentImageSrc = '';
+let hostProductsCache = [];
+let currentEditingProductId = '';
+let currentEditingProduct = null;
+let productEditPreviewObjectUrl = '';
 
 if (categoryList) {
   fetchCategories();
@@ -111,6 +131,39 @@ if (accessibilityHeroRemoveButton) {
 
 if (accessibilityHeroPreviewText) {
   accessibilityHeroPreviewText.textContent = `Dostępność i odbiory. ${DEFAULT_ACCESSIBILITY_TAGLINE}`;
+}
+
+if (productEditForm) {
+  productEditForm.addEventListener('submit', handleProductEditFormSubmit);
+}
+
+if (productEditCloseButton) {
+  productEditCloseButton.addEventListener('click', closeProductEditModal);
+}
+
+if (productEditCancelButton) {
+  productEditCancelButton.addEventListener('click', closeProductEditModal);
+}
+
+if (productEditModal) {
+  productEditModal.addEventListener('click', handleProductEditModalBackdropClick);
+  document.addEventListener('keydown', handleProductEditEscClose, true);
+}
+
+if (productEditAvailabilityDays) {
+  renderProductEditAvailabilityToggles();
+}
+
+if (productEditAvailabilityAll) {
+  productEditAvailabilityAll.addEventListener('change', handleProductEditAvailabilityAllToggle);
+}
+
+if (productEditImageInput) {
+  productEditImageInput.addEventListener('change', handleProductEditImageChange);
+}
+
+if (productEditMessage) {
+  productEditMessage.hidden = true;
 }
 
 function truncateText(text, maxLength) {
@@ -738,71 +791,61 @@ function renderProducts(products) {
     return;
   }
 
+  hostProductsCache = Array.isArray(products) ? products.slice() : [];
+  renderHostProductsFromCache();
+}
+
+function renderHostProductsFromCache() {
+  if (!productGrid) {
+    return;
+  }
+
   productGrid.innerHTML = '';
 
-  if (!Array.isArray(products) || !products.length) {
+  if (!hostProductsCache.length) {
     productGrid.innerHTML = '<p class="empty-state">Brak produktów do wyświetlenia.</p>';
     return;
   }
 
+  const categories = Array.isArray(categoriesCache) ? categoriesCache : [];
   const fragment = document.createDocumentFragment();
+  const categorized = new Map();
 
-  products.forEach((product) => {
-    const card = document.createElement('div');
-    card.className = 'product-card host-product-card';
-
-    const imageSrc = product.imageUrl || product.imageData || '';
-    if (imageSrc) {
-      card.classList.add('product-card--with-image');
-      const img = document.createElement('img');
-      img.src = imageSrc;
-      img.alt = product.name || '';
-      img.className = 'product-thumb';
-      card.appendChild(img);
-    } else {
-      card.classList.add('product-card--no-image');
-    }
-
-    const info = document.createElement('div');
-    info.className = 'product-info';
-
-    const title = document.createElement('h3');
-    title.textContent = product.name || 'Produkt';
-    info.appendChild(title);
-
-    const desc = document.createElement('p');
-    desc.className = 'product-desc';
-    const fullDesc = (product.desc || '').trim();
-    const truncatedDesc = truncateText(fullDesc, 160);
-    desc.textContent = truncatedDesc;
-    if (fullDesc && fullDesc !== truncatedDesc) {
-      desc.title = fullDesc;
-    }
-    info.appendChild(desc);
-
-    const price = document.createElement('p');
-    price.className = 'product-price';
-    price.innerHTML = `<strong>${product.price} zł</strong>`;
-    info.appendChild(price);
-
-    const actions = document.createElement('div');
-    actions.className = 'host-product-actions';
-
-    const deleteButton = document.createElement('button');
-    deleteButton.type = 'button';
-    deleteButton.dataset.id = product._id;
-    deleteButton.className = 'delete-btn delete-product-btn';
-    deleteButton.textContent = 'Usuń produkt';
-    actions.appendChild(deleteButton);
-
-    info.appendChild(actions);
-    card.appendChild(info);
-
-    const availabilityMarkup = renderProductAvailabilityTiles(product.availabilityDays);
-    card.insertAdjacentHTML('beforeend', availabilityMarkup);
-
-    fragment.appendChild(card);
+  categories.forEach((category) => {
+    categorized.set(category.name, []);
   });
+
+  const uncategorized = [];
+
+  hostProductsCache.forEach((product) => {
+    const bucket = categorized.get(product.category);
+    if (bucket) {
+      bucket.push(product);
+    } else {
+      uncategorized.push(product);
+    }
+  });
+
+  let appended = false;
+
+  categories.forEach((category) => {
+    const items = categorized.get(category.name) || [];
+    if (!items.length) {
+      return;
+    }
+    fragment.appendChild(createHostCategorySection(category.name, items));
+    appended = true;
+  });
+
+  if (uncategorized.length) {
+    fragment.appendChild(createHostCategorySection('Pozostałe', uncategorized));
+    appended = true;
+  }
+
+  if (!appended) {
+    productGrid.innerHTML = '<p class="empty-state">Brak produktów do wyświetlenia.</p>';
+    return;
+  }
 
   productGrid.appendChild(fragment);
 
@@ -812,7 +855,444 @@ function renderProducts(products) {
   }
 }
 
+function createHostCategorySection(title, items) {
+  const section = document.createElement('section');
+  section.className = 'category-group category-group--visible host-category-group';
+
+  const heading = document.createElement('h3');
+  heading.className = 'category-title';
+  heading.textContent = title || 'Bez kategorii';
+  section.appendChild(heading);
+
+  const list = document.createElement('div');
+  list.className = 'category-products host-category-products';
+
+  items.forEach((product) => {
+    list.appendChild(createHostProductCard(product));
+  });
+
+  section.appendChild(list);
+  return section;
+}
+
+function createHostProductCard(product) {
+  const card = document.createElement('article');
+  card.className = 'product-card host-product-card';
+  if (product && product._id) {
+    card.dataset.productId = product._id;
+  }
+
+  const imageSrc = product.imageUrl || product.imageData || '';
+  if (imageSrc) {
+    card.classList.add('product-card--with-image');
+    const img = document.createElement('img');
+    img.src = imageSrc;
+    img.alt = product.name || '';
+    img.className = 'product-thumb';
+    card.appendChild(img);
+  } else {
+    card.classList.add('product-card--no-image');
+  }
+
+  const info = document.createElement('div');
+  info.className = 'product-info host-product-info';
+
+  const title = document.createElement('h3');
+  title.textContent = product.name || 'Produkt';
+  info.appendChild(title);
+
+  const desc = document.createElement('p');
+  desc.className = 'product-desc';
+  const fullDesc = (product.desc || '').trim();
+  const truncatedDesc = truncateText(fullDesc, 160);
+  desc.textContent = truncatedDesc;
+  if (fullDesc && fullDesc !== truncatedDesc) {
+    desc.title = fullDesc;
+  }
+  info.appendChild(desc);
+
+  const price = document.createElement('p');
+  price.className = 'product-price';
+  price.innerHTML = `<strong>${product.price} zł</strong>`;
+  info.appendChild(price);
+
+  const actions = document.createElement('div');
+  actions.className = 'host-product-actions';
+
+  const editButton = document.createElement('button');
+  editButton.type = 'button';
+  editButton.dataset.id = product._id;
+  editButton.className = 'host-secondary-btn edit-product-btn host-product-action';
+  editButton.textContent = 'Edytuj kafelek';
+  actions.appendChild(editButton);
+
+  const deleteButton = document.createElement('button');
+  deleteButton.type = 'button';
+  deleteButton.dataset.id = product._id;
+  deleteButton.className = 'delete-btn delete-product-btn host-product-action';
+  deleteButton.textContent = 'Usuń produkt';
+  actions.appendChild(deleteButton);
+
+  info.appendChild(actions);
+  card.appendChild(info);
+
+  const availabilityMarkup = renderProductAvailabilityTiles(product.availabilityDays);
+  card.insertAdjacentHTML('beforeend', availabilityMarkup);
+
+  return card;
+}
+
+function updateHostProductsCache(updatedProduct) {
+  if (!updatedProduct || !updatedProduct._id) {
+    return;
+  }
+
+  const updatedId = updatedProduct._id;
+  let found = false;
+
+  hostProductsCache = hostProductsCache.map((item) => {
+    if (item && item._id === updatedId) {
+      found = true;
+      return updatedProduct;
+    }
+    return item;
+  });
+
+  if (!found) {
+    hostProductsCache.push(updatedProduct);
+  }
+}
+
+function openProductEditModal(product) {
+  if (!product || !productEditModal || !productEditForm) {
+    return;
+  }
+
+  currentEditingProductId = product._id || '';
+  currentEditingProduct = product;
+
+  if (!currentEditingProductId) {
+    return;
+  }
+
+  productEditForm.reset();
+  setProductEditMessage('');
+
+  const productName = product.name || 'kafelek';
+  if (productEditModalTitle) {
+    productEditModalTitle.textContent = product.name ? `Edytuj: ${product.name}` : 'Edytuj kafelek';
+  }
+  if (productEditModalSubtitle) {
+    productEditModalSubtitle.textContent = `Wprowadź zmiany, aby natychmiast zaktualizować kafelek "${productName}".`;
+  }
+
+  if (productEditNameInput) {
+    productEditNameInput.value = product.name || '';
+  }
+  if (productEditPriceInput) {
+    productEditPriceInput.value = product.price !== undefined ? product.price : '';
+  }
+  if (productEditDescInput) {
+    productEditDescInput.value = product.desc || '';
+  }
+  if (productEditCategorySelect) {
+    const normalizedCategory = product.category || '';
+    if (normalizedCategory) {
+      const hasOption = Array.from(productEditCategorySelect.options || []).some((option) => option.value === normalizedCategory);
+      if (!hasOption) {
+        const fallbackOption = document.createElement('option');
+        fallbackOption.value = normalizedCategory;
+        fallbackOption.textContent = normalizedCategory;
+        productEditCategorySelect.appendChild(fallbackOption);
+      }
+    }
+    productEditCategorySelect.value = normalizedCategory;
+  }
+
+  setProductEditAvailabilityDays(product.availabilityDays);
+  if (productEditImageInput) {
+    productEditImageInput.value = '';
+  }
+  releaseProductEditPreviewObjectUrl();
+  const imageSrc = product.imageUrl || product.imageData || '';
+  updateProductEditImagePreview(imageSrc);
+
+  productEditModal.classList.add('open');
+  productEditModal.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('modal-open');
+  if (productEditNameInput) {
+    productEditNameInput.focus();
+  }
+}
+
+function closeProductEditModal() {
+  if (!productEditModal) {
+    return;
+  }
+
+  if (productEditModal.classList.contains('open')) {
+    productEditModal.classList.remove('open');
+    productEditModal.setAttribute('aria-hidden', 'true');
+  }
+
+  if (!document.querySelector('.modal.open')) {
+    document.body.classList.remove('modal-open');
+  }
+
+  resetProductEditFormState();
+}
+
+function resetProductEditFormState() {
+  currentEditingProductId = '';
+  currentEditingProduct = null;
+  if (productEditForm) {
+    productEditForm.reset();
+  }
+  resetProductEditAvailabilitySelector();
+  setProductEditMessage('');
+  releaseProductEditPreviewObjectUrl();
+  updateProductEditImagePreview('');
+}
+
+function handleProductEditModalBackdropClick(event) {
+  if (event.target === productEditModal) {
+    closeProductEditModal();
+  }
+}
+
+function handleProductEditEscClose(event) {
+  if (event.key === 'Escape' && productEditModal && productEditModal.classList.contains('open')) {
+    event.preventDefault();
+    closeProductEditModal();
+  }
+}
+
+function setProductEditMessage(message, variant = '') {
+  if (!productEditMessage) {
+    return;
+  }
+
+  productEditMessage.textContent = message || '';
+  productEditMessage.classList.remove('success', 'error');
+
+  if (!message) {
+    productEditMessage.hidden = true;
+    return;
+  }
+
+  productEditMessage.hidden = false;
+  if (variant) {
+    productEditMessage.classList.add(variant);
+  }
+}
+
+function renderProductEditAvailabilityToggles() {
+  if (!productEditAvailabilityDays) {
+    return;
+  }
+
+  productEditAvailabilityDays.innerHTML = '';
+
+  DAYS_OF_WEEK.forEach((dayName, index) => {
+    const label = document.createElement('label');
+    label.className = 'host-product-availability__toggle';
+    label.dataset.dayIndex = String(index);
+
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.value = String(index);
+    input.dataset.role = 'product-edit-day';
+    input.setAttribute('aria-label', dayName);
+    input.addEventListener('change', handleProductEditAvailabilityDayChange);
+
+    const tile = document.createElement('span');
+    tile.textContent = PRODUCT_DAY_ABBREVIATIONS[index] || '';
+    tile.title = dayName;
+    tile.setAttribute('aria-hidden', 'true');
+
+    label.append(input, tile);
+    productEditAvailabilityDays.appendChild(label);
+  });
+}
+
+function getProductEditAvailabilityCheckboxes() {
+  if (!productEditAvailabilityDays) {
+    return [];
+  }
+  return Array.from(productEditAvailabilityDays.querySelectorAll('input[type="checkbox"][data-role="product-edit-day"]'));
+}
+
+function handleProductEditAvailabilityDayChange() {
+  if (!productEditAvailabilityAll) {
+    return;
+  }
+
+  const checkboxes = getProductEditAvailabilityCheckboxes();
+  if (!checkboxes.length) {
+    productEditAvailabilityAll.checked = false;
+    return;
+  }
+
+  const everyChecked = checkboxes.every((checkbox) => checkbox.checked);
+  productEditAvailabilityAll.checked = everyChecked;
+}
+
+function handleProductEditAvailabilityAllToggle(event) {
+  const isChecked = Boolean(event && event.target && event.target.checked);
+  getProductEditAvailabilityCheckboxes().forEach((checkbox) => {
+    checkbox.checked = isChecked;
+  });
+  handleProductEditAvailabilityDayChange();
+}
+
+function setProductEditAvailabilityDays(days) {
+  const values = parseAvailabilityValue(days);
+  const normalized = values
+    .map((item) => Number(item))
+    .filter((num) => Number.isInteger(num) && num >= 0 && num < DAYS_OF_WEEK.length);
+  const unique = new Set(normalized);
+  getProductEditAvailabilityCheckboxes().forEach((checkbox) => {
+    checkbox.checked = unique.has(Number(checkbox.value));
+  });
+  handleProductEditAvailabilityDayChange();
+}
+
+function resetProductEditAvailabilitySelector() {
+  getProductEditAvailabilityCheckboxes().forEach((checkbox) => {
+    checkbox.checked = false;
+  });
+  if (productEditAvailabilityAll) {
+    productEditAvailabilityAll.checked = false;
+  }
+}
+
+function getSelectedProductEditAvailabilityDays() {
+  return getProductEditAvailabilityCheckboxes()
+    .filter((checkbox) => checkbox.checked)
+    .map((checkbox) => Number(checkbox.value))
+    .filter((value) => Number.isInteger(value) && value >= 0 && value < DAYS_OF_WEEK.length)
+    .sort((a, b) => a - b);
+}
+
+function releaseProductEditPreviewObjectUrl() {
+  if (productEditPreviewObjectUrl) {
+    URL.revokeObjectURL(productEditPreviewObjectUrl);
+    productEditPreviewObjectUrl = '';
+  }
+}
+
+function updateProductEditImagePreview(src) {
+  if (!productEditImagePreview || !productEditImagePlaceholder) {
+    return;
+  }
+
+  if (src) {
+    productEditImagePreview.src = src;
+    productEditImagePreview.hidden = false;
+    productEditImagePlaceholder.hidden = true;
+    return;
+  }
+
+  productEditImagePreview.src = '';
+  productEditImagePreview.hidden = true;
+  productEditImagePlaceholder.hidden = false;
+}
+
+function handleProductEditImageChange(event) {
+  releaseProductEditPreviewObjectUrl();
+  const file = event && event.target && event.target.files ? event.target.files[0] : null;
+  if (!file) {
+    const fallbackSrc = currentEditingProduct ? (currentEditingProduct.imageUrl || currentEditingProduct.imageData || '') : '';
+    updateProductEditImagePreview(fallbackSrc);
+    return;
+  }
+  productEditPreviewObjectUrl = URL.createObjectURL(file);
+  updateProductEditImagePreview(productEditPreviewObjectUrl);
+}
+
+async function handleProductEditFormSubmit(event) {
+  event.preventDefault();
+
+  if (!currentEditingProductId) {
+    setProductEditMessage('Nie udało się zidentyfikować produktu do edycji.', 'error');
+    return;
+  }
+
+  const nameValue = productEditNameInput ? productEditNameInput.value.trim() : '';
+  const priceValue = productEditPriceInput ? productEditPriceInput.value : '';
+  const descValue = productEditDescInput ? productEditDescInput.value.trim() : '';
+  const categoryValue = productEditCategorySelect ? productEditCategorySelect.value : '';
+  if (!nameValue || !priceValue || !descValue || !categoryValue) {
+    setProductEditMessage('Uzupełnij wszystkie pola, aby zapisać zmiany.', 'error');
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('name', nameValue);
+  formData.append('price', priceValue);
+  formData.append('desc', descValue);
+  formData.append('category', categoryValue);
+
+  const selectedDays = productEditAvailabilityAll && productEditAvailabilityAll.checked
+    ? 'ALL'
+    : JSON.stringify(getSelectedProductEditAvailabilityDays());
+  formData.append('availabilityDays', selectedDays);
+
+  if (productEditImageInput && productEditImageInput.files && productEditImageInput.files[0]) {
+    formData.append('image', productEditImageInput.files[0]);
+  }
+
+  const submitButton = productEditForm.querySelector('button[type="submit"]');
+  const originalText = submitButton ? submitButton.textContent : '';
+  if (submitButton) {
+    submitButton.disabled = true;
+    submitButton.textContent = 'Zapisywanie...';
+  }
+  setProductEditMessage('');
+
+  try {
+    const res = await fetch(`/api/products/${currentEditingProductId}`, {
+      method: 'PUT',
+      body: formData
+    });
+
+    if (!res.ok) {
+      const errorPayload = await res.json().catch(() => ({}));
+      throw new Error(errorPayload.error || 'Nie udało się zapisać zmian.');
+    }
+
+    const updatedProduct = await res.json();
+    updateHostProductsCache(updatedProduct);
+    invalidateStorefrontProductsCache();
+    renderHostProductsFromCache();
+    closeProductEditModal();
+
+    if (hostMessage) {
+      hostMessage.innerHTML = `<p style="color:green">Zaktualizowano produkt "${updatedProduct.name || ''}".</p>`;
+    }
+  } catch (err) {
+    console.error('Błąd edycji produktu:', err);
+    setProductEditMessage(err.message || 'Nie udało się zapisać zmian.', 'error');
+  } finally {
+    if (submitButton) {
+      submitButton.disabled = false;
+      submitButton.textContent = originalText || 'Zapisz zmiany';
+    }
+  }
+}
 async function handleProductGridClick(event) {
+  const editButton = event.target.closest('.edit-product-btn');
+  if (editButton) {
+    const { id } = editButton.dataset;
+    if (id) {
+      const product = hostProductsCache.find((item) => item && item._id === id);
+      if (product) {
+        openProductEditModal(product);
+      }
+    }
+    return;
+  }
+
   const button = event.target.closest('.delete-product-btn');
   if (!button) {
     return;
@@ -859,6 +1339,7 @@ async function fetchCategories() {
     categoriesCache = await res.json();
     renderCategoryList();
     populateCategorySelect();
+    renderHostProductsFromCache();
   } catch (err) {
     console.error('Błąd pobierania kategorii:', err);
     if (categoryMessage) {
@@ -975,25 +1456,27 @@ function renderCategoryList() {
 }
 
 function populateCategorySelect() {
-  if (!categorySelect) {
+  const selects = [categorySelect, productEditCategorySelect].filter(Boolean);
+  if (!selects.length) {
     return;
   }
 
-  const previousValue = categorySelect.value;
-  categorySelect.innerHTML = '<option value="">-- Wybierz kategorię --</option>';
-  categoriesCache.forEach((category) => {
-    const option = document.createElement('option');
-    option.value = category.name;
-    option.textContent = category.name;
-    categorySelect.appendChild(option);
-  });
-
-  if (previousValue) {
-    categorySelect.value = previousValue;
-    if (categorySelect.value !== previousValue) {
-      categorySelect.value = '';
+  selects.forEach((select) => {
+    const previousValue = select.value;
+    select.innerHTML = '<option value="">-- Wybierz kategorię --</option>';
+    categoriesCache.forEach((category) => {
+      const option = document.createElement('option');
+      option.value = category.name;
+      option.textContent = category.name;
+      select.appendChild(option);
+    });
+    if (previousValue) {
+      select.value = previousValue;
+      if (select.value !== previousValue) {
+        select.value = '';
+      }
     }
-  }
+  });
 }
 
 async function handleCategoryListClick(event) {

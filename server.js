@@ -1697,6 +1697,76 @@ app.post('/api/products', upload.single('image'), async (req, res) => {
   }
 });
 
+// Edytuj istniejący produkt
+app.put('/api/products/:id', upload.single('image'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const product = await Product.findById(id);
+    if (!product) {
+      return res.status(404).json({ error: 'Produkt nie istnieje' });
+    }
+
+    if (req.fileValidationError) {
+      return res.status(400).json({ error: req.fileValidationError });
+    }
+
+    const { name, price, desc, category } = req.body;
+    const trimmedName = typeof name === 'string' ? name.trim() : '';
+    const trimmedDesc = typeof desc === 'string' ? desc.trim() : '';
+    const normalizedCategory = typeof category === 'string' ? category.trim() : '';
+    if (!trimmedName || !trimmedDesc || !normalizedCategory) {
+      return res.status(400).json({ error: 'Wszystkie pola produktu są wymagane' });
+    }
+
+    const numericPrice = Number(price);
+    if (Number.isNaN(numericPrice)) {
+      return res.status(400).json({ error: 'Nieprawidłowa cena' });
+    }
+
+    const availabilityDays = normalizeAvailabilityDaysInput(req.body.availabilityDays);
+
+    const updateSet = {
+      name: trimmedName,
+      desc: trimmedDesc,
+      category: normalizedCategory,
+      price: numericPrice,
+      availabilityDays
+    };
+
+    let uploadedImage = null;
+    const previousAssetReference = product.imageKey || product.imageUrl || '';
+
+    if (req.file) {
+      try {
+        uploadedImage = await uploadImageToCloudflare(req.file.buffer, req.file.mimetype, 'products');
+      } catch (uploadErr) {
+        console.error('Błąd przesyłania nowego zdjęcia produktu do Cloudflare:', uploadErr);
+        return res.status(500).json({ error: 'Nie udało się zapisać zdjęcia produktu.' });
+      }
+      updateSet.imageUrl = uploadedImage.url;
+      updateSet.imageKey = uploadedImage.key;
+      updateSet.imageData = '';
+    }
+
+    Object.assign(product, updateSet);
+    await product.save();
+    invalidateProductsCache();
+
+    if (uploadedImage && previousAssetReference && previousAssetReference !== uploadedImage.key && previousAssetReference !== uploadedImage.url) {
+      try {
+        await deleteImageFromCloudflare(previousAssetReference);
+      } catch (cleanupErr) {
+        console.error('Błąd czyszczenia poprzedniego zdjęcia produktu w Cloudflare:', cleanupErr);
+      }
+    }
+
+    res.json(product.toObject());
+  } catch (err) {
+    console.error('Błąd aktualizacji produktu:', err);
+    res.status(500).json({ error: 'Nie udało się zaktualizować produktu' });
+  }
+});
+
 app.post('/api/about', upload.single('aboutImage'), async (req, res) => {
   try {
     const text = typeof req.body.aboutText === 'string' ? req.body.aboutText.trim() : '';

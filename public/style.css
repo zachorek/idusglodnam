@@ -373,6 +373,12 @@ body.page-intro-active:not(.page-intro-ready) .order-hero {
   box-shadow: 0 22px 44px var(--surface-shadow);
 }
 
+.product-card--highlight {
+  box-shadow: 0 26px 52px rgba(139, 17, 54, 0.35);
+  outline: 3px solid var(--accent-color);
+  outline-offset: 3px;
+}
+
 .category-products .product-card {
   cursor: pointer;
   width: 100%;
@@ -3689,6 +3695,21 @@ body.about-gallery-zoom-open {
 .availability-card__list-product {
   font-weight: 600;
   color: #4a3426;
+}
+
+.availability-card__list-link {
+  color: var(--accent-color);
+  text-decoration: none;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.2s ease, text-decoration-color 0.2s ease;
+}
+
+.availability-card__list-link:hover,
+.availability-card__list-link:focus-visible {
+  color: var(--surface-accent-dark);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
 }
 
 .availability-card__list-time {

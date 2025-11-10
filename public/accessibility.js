@@ -3,6 +3,92 @@ const availabilityError = document.getElementById('availabilityError');
 const accessibilityHeroSection = document.querySelector('.accessibility-hero');
 
 const DAYS_OF_WEEK = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela'];
+const ORDER_PAGE_URL = '/index';
+const ORDER_PRODUCT_PARAM = 'product';
+
+let cachedOrderProductsIndex = null;
+let orderProductsIndexPromise = null;
+
+function buildAvailabilityProductSlug(value) {
+  if (value === undefined || value === null) {
+    return '';
+  }
+  let text = String(value).trim();
+  if (!text) {
+    return '';
+  }
+  if (typeof text.normalize === 'function') {
+    text = text.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  }
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+}
+
+function buildOrderProductsIndex(products) {
+  const map = new Map();
+  (Array.isArray(products) ? products : []).forEach((product) => {
+    if (!product || !product.name) {
+      return;
+    }
+    const slug = buildAvailabilityProductSlug(product.name);
+    if (!slug) {
+      return;
+    }
+    map.set(slug, {
+      slug,
+      id: product._id,
+      name: product.name
+    });
+  });
+  return map;
+}
+
+function ensureOrderProductsIndex() {
+  if (cachedOrderProductsIndex) {
+    return Promise.resolve(cachedOrderProductsIndex);
+  }
+  if (!orderProductsIndexPromise) {
+    orderProductsIndexPromise = fetch('/api/products')
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error('Nie udało się pobrać listy produktów');
+        }
+        return response.json();
+      })
+      .then((products) => {
+        cachedOrderProductsIndex = buildOrderProductsIndex(products);
+        return cachedOrderProductsIndex;
+      })
+      .catch((error) => {
+        console.warn('Nie udało się pobrać listy produktów dla linków dostępności:', error);
+        cachedOrderProductsIndex = new Map();
+        orderProductsIndexPromise = null;
+        return cachedOrderProductsIndex;
+      });
+  }
+  return orderProductsIndexPromise;
+}
+
+function resolveOrderProductLink(productName, productIndex) {
+  if (!productName || !productIndex || typeof productIndex.get !== 'function') {
+    return null;
+  }
+  const slug = buildAvailabilityProductSlug(productName);
+  if (!slug) {
+    return null;
+  }
+  const product = productIndex.get(slug);
+  if (!product) {
+    return null;
+  }
+  return {
+    slug: product.slug || slug,
+    name: product.name || productName
+  };
+}
 
 window.addEventListener('DOMContentLoaded', () => {
   loadAccessibilityHeroBackground();
@@ -62,24 +148,30 @@ async function loadAvailabilitySchedule() {
     toggleAvailabilityError(false);
     availabilityGrid.classList.add('is-loading');
 
-    const response = await fetch('/api/availability');
-    if (!response.ok) {
-      throw new Error('Nie udało się pobrać danych o dostępności');
-    }
-
-    const data = await response.json();
-    const schedule = Array.isArray(data) ? data : [];
-    renderAvailabilityCards(schedule);
+    const [schedule, productIndex] = await Promise.all([
+      fetchAvailabilityData(),
+      ensureOrderProductsIndex().catch(() => new Map())
+    ]);
+    renderAvailabilityCards(schedule, productIndex);
   } catch (error) {
     console.error('Błąd pobierania harmonogramu dostępności:', error);
-    renderAvailabilityCards([]);
+    renderAvailabilityCards([], new Map());
     toggleAvailabilityError(true, 'Nie udało się załadować harmonogramu. Spróbuj ponownie później.');
   } finally {
     availabilityGrid.classList.remove('is-loading');
   }
 }
 
-function renderAvailabilityCards(schedule) {
+async function fetchAvailabilityData() {
+  const response = await fetch('/api/availability');
+  if (!response.ok) {
+    throw new Error('Nie udało się pobrać danych o dostępności');
+  }
+  const data = await response.json();
+  return Array.isArray(data) ? data : [];
+}
+
+function renderAvailabilityCards(schedule, productIndex = new Map()) {
   if (!availabilityGrid) {
     return;
   }
@@ -92,11 +184,11 @@ function renderAvailabilityCards(schedule) {
     : DAYS_OF_WEEK.map((dayName, dayIndex) => ({ dayIndex, dayName, entries: [], details: '', updatedAt: null }));
 
   data.forEach((day, index) => {
-    availabilityGrid.appendChild(createAvailabilityCard(day, index));
+    availabilityGrid.appendChild(createAvailabilityCard(day, index, productIndex));
   });
 }
 
-function createAvailabilityCard(day, index) {
+function createAvailabilityCard(day, index, productIndex = new Map()) {
   const card = document.createElement('article');
   card.className = 'availability-card';
   card.style.setProperty('--card-index', index);
@@ -147,10 +239,21 @@ function createAvailabilityCard(day, index) {
       const item = document.createElement('li');
       item.className = 'availability-card__list-item';
 
-      const product = document.createElement('span');
-      product.className = 'availability-card__list-product';
-      product.textContent = entry.product || 'Produkt';
-      item.appendChild(product);
+      const productLabel = entry.product || 'Produkt';
+      const linkTarget = resolveOrderProductLink(entry.product, productIndex);
+      let productNode;
+      if (linkTarget) {
+        productNode = document.createElement('a');
+        productNode.href = `${ORDER_PAGE_URL}?${ORDER_PRODUCT_PARAM}=${encodeURIComponent(linkTarget.slug)}`;
+        productNode.className = 'availability-card__list-product availability-card__list-link';
+        productNode.setAttribute('aria-label', `Przejdź do zamówienia produktu ${productLabel}`);
+        productNode.title = 'Przejdź do produktu w zakładce Zamów';
+      } else {
+        productNode = document.createElement('span');
+        productNode.className = 'availability-card__list-product';
+      }
+      productNode.textContent = productLabel;
+      item.appendChild(productNode);
 
       const time = document.createElement('span');
       time.className = 'availability-card__list-time';

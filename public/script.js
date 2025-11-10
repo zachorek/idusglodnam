@@ -18,6 +18,7 @@ const MAX_AVAILABILITY_TILES = 6;
 const PAGE_TRANSITION_DURATION = 350;
 const JS_DAY_TO_PRODUCT_DAY_INDEX = [6, 0, 1, 2, 3, 4, 5];
 const STOCK_CHANNEL_NAME = 'chachor-stock';
+const PRODUCT_DEEP_LINK_PARAM = 'product';
 
 let categoryRevealObserver = null;
 let pageIntroScheduled = false;
@@ -37,6 +38,65 @@ let lastFetchedMenuStockDate = null;
 let stockBroadcastChannel = null;
 let stockBroadcastInitialized = false;
 const pendingStockRefreshDates = new Set();
+
+function buildProductSlug(value) {
+  if (value === undefined || value === null) {
+    return '';
+  }
+  let text = String(value).trim();
+  if (!text) {
+    return '';
+  }
+  if (typeof text.normalize === 'function') {
+    text = text.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  }
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+}
+
+function normalizeProductSlug(value) {
+  return buildProductSlug(value);
+}
+
+function getProductSlugFromData(product) {
+  if (!product) {
+    return '';
+  }
+  return buildProductSlug(product.name || '');
+}
+
+function getProductAnchorIdForProduct(product) {
+  if (!product) {
+    return '';
+  }
+  const slug = getProductSlugFromData(product);
+  if (slug) {
+    return `product-${slug}`;
+  }
+  if (product._id) {
+    return `product-${String(product._id).trim()}`;
+  }
+  return '';
+}
+
+const initialProductDeepLinkSlug = (() => {
+  if (typeof window === 'undefined' || typeof window.location === 'undefined' || typeof URLSearchParams === 'undefined') {
+    return null;
+  }
+  try {
+    const params = new URLSearchParams(window.location.search || '');
+    const requested = params.get(PRODUCT_DEEP_LINK_PARAM);
+    const slug = normalizeProductSlug(requested);
+    return slug || null;
+  } catch (err) {
+    return null;
+  }
+})();
+
+let pendingProductDeepLinkSlug = initialProductDeepLinkSlug;
 
 const bodyScrollLockState = {
   active: false,
@@ -773,6 +833,8 @@ function renderProductsByCategory(categories, products) {
 
   productGrid.appendChild(fragment);
   applyCategoryFadeIn();
+  const raf = typeof requestAnimationFrame === 'function' ? requestAnimationFrame : (cb) => setTimeout(cb, 16);
+  raf(() => attemptResolveProductDeepLink());
 }
 
 function createCategorySection(title, items, anchorId) {
@@ -957,6 +1019,32 @@ function applyCategoryFadeIn() {
   });
 }
 
+function attemptResolveProductDeepLink() {
+  if (!pendingProductDeepLinkSlug || !productGrid) {
+    return;
+  }
+  const target = productGrid.querySelector(`[data-product-slug="${pendingProductDeepLinkSlug}"]`);
+  if (!target) {
+    return;
+  }
+  pendingProductDeepLinkSlug = null;
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  safeFocus(target);
+  target.classList.add('product-card--highlight');
+  window.setTimeout(() => {
+    target.classList.remove('product-card--highlight');
+  }, 4000);
+  if (typeof window !== 'undefined' && window.history && typeof window.history.replaceState === 'function') {
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete(PRODUCT_DEEP_LINK_PARAM);
+      window.history.replaceState({}, '', url);
+    } catch (err) {
+      // ignore URL errors
+    }
+  }
+}
+
 function ensureCategoryRevealObserver() {
   if (categoryRevealObserver || typeof window === 'undefined') {
     return categoryRevealObserver;
@@ -1109,6 +1197,17 @@ function startPageLeave(callback) {
 function createProductCard(product) {
   const card = document.createElement('div');
   card.classList.add('product-card');
+  const productSlug = getProductSlugFromData(product);
+  const productAnchorId = getProductAnchorIdForProduct(product);
+  if (productAnchorId) {
+    card.id = productAnchorId;
+  }
+  if (productSlug) {
+    card.dataset.productSlug = productSlug;
+  }
+  if (product && product._id) {
+    card.dataset.productId = product._id;
+  }
   card.setAttribute('tabindex', '0');
   card.setAttribute('role', 'button');
   card.setAttribute('aria-label', `Zobacz szczegóły produktu ${product.name || ''}`);

@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const dns = require('dns');
 const multer = require('multer');
 const nodemailer = require('nodemailer');
 const cron = require('node-cron');
@@ -496,6 +497,20 @@ function setCategoriesCache(data) {
 let mailTransporter = null;
 let mailTransporterInitAttempted = false;
 
+const MAIL_DNS_SERVERS = (process.env.MAIL_DNS_SERVERS || '')
+  .split(',')
+  .map((entry) => entry && entry.trim())
+  .filter(Boolean);
+
+if (MAIL_DNS_SERVERS.length) {
+  try {
+    dns.setServers(MAIL_DNS_SERVERS);
+    console.log(`📮 Mail DNS servers set to: ${MAIL_DNS_SERVERS.join(', ')}`);
+  } catch (err) {
+    console.error('⚠️ Nie udało się ustawić MAIL_DNS_SERVERS:', err.message || err);
+  }
+}
+
 const MAIL_PROVIDER_PRESETS = {
   gmail: { service: 'gmail', secure: true },
   outlook: { host: 'smtp.office365.com', port: 587, secure: false, requireTLS: true },
@@ -513,10 +528,14 @@ function resolveMailTransportConfig(authUser, authPass) {
       pass: authPass
     }
   };
+  let defaultServername = '';
 
   const provider = (process.env.MAIL_PROVIDER || '').toLowerCase();
   if (provider && MAIL_PROVIDER_PRESETS[provider]) {
     Object.assign(transportConfig, MAIL_PROVIDER_PRESETS[provider]);
+  }
+  if (transportConfig.host) {
+    defaultServername = transportConfig.host;
   }
 
   const service = process.env.MAIL_SERVICE;
@@ -527,6 +546,17 @@ function resolveMailTransportConfig(authUser, authPass) {
   const host = process.env.MAIL_HOST;
   if (host) {
     transportConfig.host = host;
+    delete transportConfig.service;
+  }
+  if (transportConfig.host) {
+    defaultServername = transportConfig.host;
+  }
+
+  const hostAddress = process.env.MAIL_HOST_ADDRESS
+    || process.env.MAIL_SMTP_ADDRESS
+    || process.env.MAIL_CONNECT_HOST;
+  if (hostAddress) {
+    transportConfig.host = hostAddress;
     delete transportConfig.service;
   }
 
@@ -563,6 +593,17 @@ function resolveMailTransportConfig(authUser, authPass) {
     transportConfig.tls = {
       ...(transportConfig.tls || {}),
       minVersion: tlsMinVersion
+    };
+  }
+
+  const tlsServername = process.env.MAIL_TLS_SERVERNAME
+    || process.env.MAIL_SERVERNAME
+    || (hostAddress ? (process.env.MAIL_HOST || defaultServername) : '')
+    || defaultServername;
+  if (tlsServername) {
+    transportConfig.tls = {
+      ...(transportConfig.tls || {}),
+      servername: tlsServername
     };
   }
 

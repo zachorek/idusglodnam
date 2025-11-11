@@ -1116,7 +1116,265 @@ function createHostProductCard(product) {
   const availabilityMarkup = renderProductAvailabilityTiles(product.availabilityDays);
   card.insertAdjacentHTML('beforeend', availabilityMarkup);
 
+  const pickupEditor = createProductPickupEditor(product);
+  if (pickupEditor) {
+    card.appendChild(pickupEditor);
+  }
+
   return card;
+}
+
+function createProductPickupEditor(product) {
+  if (!product || !product._id) {
+    return null;
+  }
+
+  const hasAvailability = Array.isArray(product.availabilityDays) && product.availabilityDays.length > 0;
+  const section = document.createElement('section');
+  section.className = 'host-product-pickup-editor';
+
+  const header = document.createElement('div');
+  header.className = 'host-product-pickup-editor__header';
+  const title = document.createElement('span');
+  title.textContent = 'Godziny odbioru';
+  header.appendChild(title);
+
+  const toggleButton = document.createElement('button');
+  toggleButton.type = 'button';
+  toggleButton.className = 'host-text-btn host-product-pickup-editor__toggle';
+  toggleButton.textContent = 'Edytuj';
+  toggleButton.setAttribute('aria-expanded', 'false');
+  header.appendChild(toggleButton);
+
+  section.appendChild(header);
+
+  const body = document.createElement('div');
+  body.className = 'host-product-pickup-editor__body';
+  body.hidden = true;
+  body.setAttribute('aria-hidden', 'true');
+  section.appendChild(body);
+
+  if (!hasAvailability) {
+    const notice = document.createElement('p');
+    notice.className = 'host-product-pickup-editor__notice';
+    notice.textContent = 'Najpierw ustaw dni dostępności, aby móc edytować godziny odbioru.';
+    body.appendChild(notice);
+    toggleButton.disabled = true;
+    toggleButton.textContent = 'Brak dni';
+    return section;
+  }
+
+  const form = document.createElement('form');
+  form.className = 'host-product-pickup-form';
+  form.dataset.productId = product._id;
+  form.addEventListener('submit', handleProductPickupFormSubmit);
+
+  const inputsGrid = document.createElement('div');
+  inputsGrid.className = 'host-product-pickup-form__grid';
+  inputsGrid.dataset.role = 'pickup-inputs';
+  form.appendChild(inputsGrid);
+
+  const actions = document.createElement('div');
+  actions.className = 'host-product-pickup-form__actions';
+  const saveButton = document.createElement('button');
+  saveButton.type = 'submit';
+  saveButton.className = 'host-primary-btn host-primary-btn--compact';
+  saveButton.textContent = 'Zapisz godziny';
+  actions.appendChild(saveButton);
+  form.appendChild(actions);
+
+  const message = document.createElement('p');
+  message.className = 'host-product-pickup-form__message';
+  message.setAttribute('role', 'status');
+  message.hidden = true;
+
+  body.append(form, message);
+
+  toggleButton.addEventListener('click', () => {
+    const willOpen = body.hidden;
+    body.hidden = !willOpen;
+    body.setAttribute('aria-hidden', willOpen ? 'false' : 'true');
+    toggleButton.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    if (willOpen && !body.dataset.loaded && body.dataset.loading !== 'true') {
+      loadProductPickupEditorData({
+        productId: product._id,
+        availabilityDays: product.availabilityDays,
+        container: inputsGrid,
+        messageEl: message,
+        body
+      });
+    }
+  });
+
+  return section;
+}
+
+async function loadProductPickupEditorData({ productId, availabilityDays, container, messageEl, body }) {
+  if (!productId || !container || !Array.isArray(availabilityDays) || !availabilityDays.length) {
+    return;
+  }
+  if (body) {
+    body.dataset.loading = 'true';
+  }
+  setProductPickupMessage(messageEl, 'Wczytywanie godzin odbioru...', 'info');
+  renderProductPickupInputs(availabilityDays, container, {});
+  try {
+    const data = await fetchProductPickupTimesById(productId);
+    const values = data && data.pickupTimes && typeof data.pickupTimes === 'object' ? data.pickupTimes : {};
+    renderProductPickupInputs(availabilityDays, container, values);
+    setProductPickupMessage(messageEl, '', '');
+    if (body) {
+      body.dataset.loaded = 'true';
+    }
+  } catch (err) {
+    console.error('Błąd pobierania godzin odbioru produktu:', err);
+    renderProductPickupInputs(availabilityDays, container, {});
+    setProductPickupMessage(messageEl, err && err.message ? err.message : 'Nie udało się pobrać godzin odbioru.', 'error');
+  } finally {
+    if (body) {
+      delete body.dataset.loading;
+    }
+  }
+}
+
+function renderProductPickupInputs(availabilityDays, container, values) {
+  if (!container) {
+    return;
+  }
+  container.innerHTML = '';
+  const normalizedDays = Array.isArray(availabilityDays)
+    ? availabilityDays
+        .map((day) => Number(day))
+        .filter((day) => Number.isInteger(day) && day >= 0 && day < DAYS_OF_WEEK.length)
+        .sort((a, b) => a - b)
+    : [];
+
+  if (!normalizedDays.length) {
+    const notice = document.createElement('p');
+    notice.className = 'host-product-pickup-editor__notice';
+    notice.textContent = 'Brak dni dostępności.';
+    container.appendChild(notice);
+    return;
+  }
+
+  normalizedDays.forEach((dayIndex) => {
+    const row = document.createElement('label');
+    row.className = 'host-product-pickup-form__row';
+    row.dataset.dayIndex = String(dayIndex);
+
+    const dayLabel = document.createElement('span');
+    dayLabel.className = 'host-product-pickup-form__day';
+    dayLabel.textContent = DAYS_OF_WEEK[dayIndex] || `Dzień ${dayIndex + 1}`;
+
+    const input = document.createElement('input');
+    input.type = 'time';
+    input.step = 300;
+    input.required = true;
+    input.dataset.dayIndex = String(dayIndex);
+    input.autocomplete = 'off';
+    input.value = values && values[dayIndex] ? values[dayIndex] : '';
+
+    row.append(dayLabel, input);
+    container.appendChild(row);
+  });
+}
+
+function setProductPickupMessage(element, text, variant = '') {
+  if (!element) {
+    return;
+  }
+  element.textContent = text || '';
+  element.hidden = !text;
+  element.classList.remove('host-product-pickup-form__message--error', 'host-product-pickup-form__message--success');
+  if (!text) {
+    return;
+  }
+  if (variant === 'error') {
+    element.classList.add('host-product-pickup-form__message--error');
+  } else if (variant === 'success') {
+    element.classList.add('host-product-pickup-form__message--success');
+  }
+}
+
+async function fetchProductPickupTimesById(productId) {
+  const res = await fetch(`/api/products/${productId}/pickup-times`);
+  let payload = null;
+  try {
+    payload = await res.json();
+  } catch (err) {
+    payload = null;
+  }
+  if (!res.ok) {
+    const message = payload && payload.error ? payload.error : 'Nie udało się pobrać godzin odbioru.';
+    throw new Error(message);
+  }
+  return payload || {};
+}
+
+async function handleProductPickupFormSubmit(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const productId = form && form.dataset ? form.dataset.productId : '';
+  if (!productId) {
+    return;
+  }
+
+  const messageEl = form.nextElementSibling && form.nextElementSibling.classList.contains('host-product-pickup-form__message')
+    ? form.nextElementSibling
+    : null;
+  setProductPickupMessage(messageEl, '');
+
+  const inputs = Array.from(form.querySelectorAll('input[type="time"][data-day-index]'));
+  const payload = {};
+  const missingDays = [];
+  inputs.forEach((input) => {
+    const value = (input.value || '').trim();
+    const dayIndex = Number(input.dataset.dayIndex);
+    if (!value) {
+      missingDays.push(dayIndex);
+    } else {
+      payload[dayIndex] = value;
+    }
+  });
+
+  if (missingDays.length) {
+    const labels = missingDays.map((dayIndex) => DAYS_OF_WEEK[dayIndex] || `Dzień ${dayIndex + 1}`);
+    setProductPickupMessage(messageEl, `Uzupełnij godziny dla: ${labels.join(', ')}.`, 'error');
+    const firstMissing = inputs.find((input) => !input.value);
+    if (firstMissing && typeof firstMissing.focus === 'function') {
+      firstMissing.focus();
+    }
+    return;
+  }
+
+  const submitButton = form.querySelector('button[type="submit"]');
+  const originalText = submitButton ? submitButton.textContent : '';
+  if (submitButton) {
+    submitButton.disabled = true;
+    submitButton.textContent = 'Zapisuję...';
+  }
+
+  try {
+    const res = await fetch(`/api/products/${productId}/pickup-times`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pickupTimes: payload })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const message = data && data.error ? data.error : 'Nie udało się zapisać godzin odbioru.';
+      throw new Error(message);
+    }
+    setProductPickupMessage(messageEl, 'Zapisano godziny odbioru.', 'success');
+  } catch (err) {
+    console.error('Błąd zapisu godzin odbioru produktu:', err);
+    setProductPickupMessage(messageEl, err && err.message ? err.message : 'Nie udało się zapisać godzin odbioru.', 'error');
+  } finally {
+    if (submitButton) {
+      submitButton.disabled = false;
+      submitButton.textContent = originalText || 'Zapisz godziny';
+    }
+  }
 }
 
 function updateHostProductsCache(updatedProduct) {

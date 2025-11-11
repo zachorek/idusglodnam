@@ -504,6 +504,55 @@ async function fetchPickupTimesForDay(dayIndex) {
   return cacheEntry;
 }
 
+async function getPickupTimesForProduct(productDoc) {
+  if (!productDoc || typeof productDoc.name !== 'string') {
+    return new Map();
+  }
+  const normalizedName = normalizeProductLookupKey(productDoc.name);
+  if (!normalizedName) {
+    return new Map();
+  }
+  const availabilityDays = Array.isArray(productDoc.availabilityDays)
+    ? productDoc.availabilityDays
+        .map((day) => Number(day))
+        .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)
+    : [];
+  const query = availabilityDays.length ? { dayIndex: { $in: availabilityDays } } : {};
+  try {
+    const records = await Availability.find(query).lean();
+    const map = new Map();
+    records.forEach((record) => {
+      if (!record || !Array.isArray(record.entries)) {
+        return;
+      }
+      const match = record.entries.find((entry) => normalizeProductLookupKey(entry && entry.product) === normalizedName);
+      if (!match) {
+        return;
+      }
+      const normalizedTime = normalizePickupTimeString(match && match.availableFrom);
+      if (!normalizedTime) {
+        return;
+      }
+      map.set(record.dayIndex, normalizedTime);
+    });
+    return map;
+  } catch (err) {
+    console.error('Nie udało się pobrać godzin odbioru dla produktu:', err);
+    return new Map();
+  }
+}
+
+function pickupTimesMapToObject(map) {
+  const result = {};
+  if (!(map instanceof Map)) {
+    return result;
+  }
+  map.forEach((value, key) => {
+    result[key] = value;
+  });
+  return result;
+}
+
 async function resolvePickupReadyTimeLabel(order) {
   if (!order) {
     return '';
@@ -1762,6 +1811,57 @@ app.get('/api/products', async (req, res) => {
     res.json(products);
   } catch (err) {
     res.status(500).json({ error: 'Błąd pobierania produktów' });
+  }
+});
+
+app.get('/api/products/:id/pickup-times', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const product = await Product.findById(id).lean();
+    if (!product) {
+      return res.status(404).json({ error: 'Produkt nie istnieje' });
+    }
+    const pickupTimes = await getPickupTimesForProduct(product);
+    res.json({
+      productId: product._id,
+      availabilityDays: Array.isArray(product.availabilityDays) ? product.availabilityDays : [],
+      pickupTimes: pickupTimesMapToObject(pickupTimes)
+    });
+  } catch (err) {
+    console.error('Błąd pobierania godzin odbioru produktu:', err);
+    res.status(500).json({ error: 'Nie udało się pobrać godzin odbioru produktu' });
+  }
+});
+
+app.put('/api/products/:id/pickup-times', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const product = await Product.findById(id);
+    if (!product) {
+      return res.status(404).json({ error: 'Produkt nie istnieje' });
+    }
+
+    const availabilityDays = Array.isArray(product.availabilityDays) ? product.availabilityDays : [];
+    if (!availabilityDays.length) {
+      return res.status(400).json({ error: 'Najpierw ustaw dni dostępności produktu.' });
+    }
+
+    const pickupTimesMap = parsePickupTimesInput(req.body.pickupTimes);
+    const validation = validatePickupTimesForAvailability(availabilityDays, pickupTimesMap);
+    if (!validation.valid) {
+      const message = buildPickupTimesValidationMessage(validation);
+      return res.status(400).json({ error: message });
+    }
+
+    await upsertPickupTimesForProduct(product.name, availabilityDays, pickupTimesMap);
+    const updatedMap = await getPickupTimesForProduct(product);
+    res.json({
+      productId: product._id,
+      pickupTimes: pickupTimesMapToObject(updatedMap)
+    });
+  } catch (err) {
+    console.error('Błąd zapisu godzin odbioru produktu:', err);
+    res.status(500).json({ error: 'Nie udało się zapisać godzin odbioru produktu' });
   }
 });
 

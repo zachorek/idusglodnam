@@ -439,33 +439,69 @@ function normalizePickupTimeString(value) {
   return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
 }
 
-async function fetchPickupReadyTimeForDay(dayIndex) {
-  if (!Number.isInteger(dayIndex) || dayIndex < 0 || dayIndex > 6) {
+function normalizeProductLookupKey(value) {
+  if (value === undefined || value === null) {
     return '';
+  }
+  const base = String(value).trim();
+  if (!base) {
+    return '';
+  }
+  return base
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+async function fetchPickupTimesForDay(dayIndex) {
+  if (!Number.isInteger(dayIndex) || dayIndex < 0 || dayIndex > 6) {
+    return { earliest: '', timesByProduct: new Map() };
   }
   const cached = pickupTimeCache.get(dayIndex);
   const now = Date.now();
   if (cached && cached.expires > now) {
-    return cached.value;
+    return cached;
   }
-  let value = '';
+
+  let earliest = '';
+  const timesByProduct = new Map();
+
   try {
     const record = await Availability.findOne({ dayIndex }).lean();
     if (record && Array.isArray(record.entries)) {
-      const times = record.entries
-        .map((entry) => normalizePickupTimeString(entry && entry.availableFrom))
-        .filter(Boolean)
-        .sort();
-      value = times.length ? times[0] : '';
+      const allTimes = [];
+      record.entries.forEach((entry) => {
+        const normalizedTime = normalizePickupTimeString(entry && entry.availableFrom);
+        if (!normalizedTime) {
+          return;
+        }
+        allTimes.push(normalizedTime);
+        const productKey = normalizeProductLookupKey(entry && entry.product);
+        if (!productKey) {
+          return;
+        }
+        const current = timesByProduct.get(productKey);
+        if (!current || normalizedTime < current) {
+          timesByProduct.set(productKey, normalizedTime);
+        }
+      });
+      if (allTimes.length) {
+        allTimes.sort();
+        earliest = allTimes[0];
+      }
     }
   } catch (err) {
     console.warn('Nie udało się pobrać godzin odbioru dla dnia', dayIndex, err);
   }
-  pickupTimeCache.set(dayIndex, {
-    value,
+
+  const cacheEntry = {
+    earliest,
+    timesByProduct,
     expires: now + PICKUP_TIME_CACHE_TTL_MS
-  });
-  return value;
+  };
+  pickupTimeCache.set(dayIndex, cacheEntry);
+  return cacheEntry;
 }
 
 async function resolvePickupReadyTimeLabel(order) {
@@ -479,8 +515,29 @@ async function resolvePickupReadyTimeLabel(order) {
   if (!Number.isInteger(dayIndex)) {
     return '';
   }
-  const time = await fetchPickupReadyTimeForDay(dayIndex);
-  return time ? `od ${time}` : '';
+
+  const { earliest, timesByProduct } = await fetchPickupTimesForDay(dayIndex);
+  const products = Array.isArray(order.products) ? order.products : [];
+  const matchingTimes = [];
+
+  if (products.length && timesByProduct instanceof Map) {
+    products.forEach((product) => {
+      const key = normalizeProductLookupKey(product && product.name);
+      if (!key) {
+        return;
+      }
+      const time = timesByProduct.get(key);
+      if (time) {
+        matchingTimes.push(time);
+      }
+    });
+  }
+
+  const resolvedTime = matchingTimes.length
+    ? matchingTimes.sort((a, b) => a.localeCompare(b)).pop()
+    : earliest;
+
+  return resolvedTime || '';
 }
 
 function parsePickupTimesInput(raw) {
@@ -1018,7 +1075,7 @@ function createOrderEmailContent(order) {
     summaryLines.push(`Data odbioru: ${pickupDateDisplay || pickupDate}`);
   }
   if (pickupReadyTimeLabel) {
-    summaryLines.push(`Godzina odbioru: ${pickupReadyTimeLabel}`);
+    summaryLines.push(`Wszystko do odebrania od: ${pickupReadyTimeLabel}`);
   }
   if (comment) {
     summaryLines.push('');
@@ -1072,7 +1129,7 @@ ${productRows.trim()}
   const pickupTimeRowHtml = pickupReadyTimeLabel
     ? `
             <div class="summary-row summary-row--link">
-              <strong>Godzina odbioru:&nbsp;</strong>
+              <strong>Wszystko do odebrania od:&nbsp;</strong>
               <span class="summary-value">${escapeHtml(pickupReadyTimeLabel)}</span>
             </div>
         `

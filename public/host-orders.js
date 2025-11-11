@@ -256,7 +256,8 @@ function createOrderRow(order) {
   meta.textContent = [
     hasSequenceNumber ? `Numer: #${sequenceNumber}` : null,
     order.pickupDate ? `Odbiór: ${order.pickupDate}` : null,
-    `Kwota: ${formatCurrency(order.totalAfterDiscount)}`
+    `Kwota: ${formatCurrency(order.totalAfterDiscount)}`,
+    order.firstName ? `Klient: ${order.firstName}` : null
   ].filter(Boolean).join(' • ');
   header.appendChild(meta);
 
@@ -269,6 +270,7 @@ function createOrderRow(order) {
     { label: 'Numer w dniu', value: hasSequenceNumber ? `#${sequenceNumber}` : '—' },
     { label: 'ID zamówienia', value: order.orderId || '—' },
     { label: 'Godzina złożenia', value: formatTime(order.createdAt) || '—' },
+    { label: 'Imię', value: order.firstName || '—' },
     { label: 'Adres email', value: order.email || '—' },
     { label: 'Telefon', value: order.phone || '—' }
   ];

@@ -1498,10 +1498,14 @@ function createDailyOrdersEmailPayload(reportDate, orders, totals) {
     const sequenceLabel = Number.isFinite(order.sequenceNumber) && order.sequenceNumber > 0
       ? `#${order.sequenceNumber}`
       : 'brak';
+    const firstNameLabel = order && typeof order.firstName === 'string' && order.firstName.trim()
+      ? order.firstName.trim()
+      : 'brak';
     const lines = [
       `Numer w dniu: ${sequenceLabel}`,
       `ID zamówienia: ${order.orderId || 'brak'}`,
       `Godzina złożenia: ${formatTimeForDisplay(order.createdAt) || 'brak'}`,
+      `Imię klienta: ${firstNameLabel}`,
       `Adres email: ${order.email || 'brak'}`,
       `Telefon: ${order.phone || 'brak'}`,
       'Produkty:'
@@ -1558,6 +1562,7 @@ function createDailyOrdersEmailPayload(reportDate, orders, totals) {
         <td style="padding:12px;border:1px solid #ddd;vertical-align:top;">${escapeHtml(sequenceCell)}</td>
         <td style="padding:12px;border:1px solid #ddd;vertical-align:top;">${escapeHtml(order.orderId || '')}</td>
         <td style="padding:12px;border:1px solid #ddd;vertical-align:top;">${escapeHtml(formatTimeForDisplay(order.createdAt) || '')}</td>
+        <td style="padding:12px;border:1px solid #ddd;vertical-align:top;">${escapeHtml(order.firstName || '')}</td>
         <td style="padding:12px;border:1px solid #ddd;vertical-align:top;">${escapeHtml(order.email || '')}</td>
         <td style="padding:12px;border:1px solid #ddd;vertical-align:top;">${escapeHtml(order.phone || '')}</td>
         <td style="padding:12px;border:1px solid #ddd;vertical-align:top;">
@@ -1584,6 +1589,7 @@ function createDailyOrdersEmailPayload(reportDate, orders, totals) {
               <th align="left" style="padding:8px;border:1px solid #ddd;">Numer w dniu</th>
               <th align="left" style="padding:8px;border:1px solid #ddd;">Nr zamówienia</th>
               <th align="left" style="padding:8px;border:1px solid #ddd;">Godzina złożenia</th>
+              <th align="left" style="padding:8px;border:1px solid #ddd;">Imię</th>
               <th align="left" style="padding:8px;border:1px solid #ddd;">Adres email</th>
               <th align="left" style="padding:8px;border:1px solid #ddd;">Telefon</th>
               <th align="left" style="padding:8px;border:1px solid #ddd;">Produkty</th>

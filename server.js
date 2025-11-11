@@ -817,7 +817,8 @@ function parsePositiveInteger(value, fallback) {
 const ORDER_RETENTION_DAYS = parsePositiveInteger(process.env.ORDER_RETENTION_DAYS, 7);
 const ORDER_REPORT_RETENTION_DAYS = parsePositiveInteger(process.env.ORDER_REPORT_RETENTION_DAYS, 0);
 const DAILY_ORDERS_EMAIL = process.env.DAILY_ORDERS_EMAIL || 'zamowienia@chachorpiecze.pl';
-const DAILY_ORDERS_CRON = process.env.DAILY_ORDERS_CRON || '1 0 * * *';
+const DEFAULT_DAILY_ORDERS_CRON = '59 23 * * *';
+const DAILY_ORDERS_CRON = resolveDailyOrdersCronExpression(process.env.DAILY_ORDERS_CRON);
 const DAILY_ORDERS_TIMEZONE = process.env.DAILY_ORDERS_TIMEZONE || 'Europe/Warsaw';
 const DAILY_ORDERS_ENABLED = String(process.env.DAILY_ORDERS_ENABLED || 'true').toLowerCase() !== 'false';
 const DEFAULT_LOCALE = process.env.APP_LOCALE || 'pl-PL';
@@ -856,6 +857,17 @@ function formatCronDailyTime(cronExpression) {
   const hours = parsed.hour.toString().padStart(2, '0');
   const minutes = parsed.minute.toString().padStart(2, '0');
   return `${hours}:${minutes}`;
+}
+
+function resolveDailyOrdersCronExpression(rawExpression) {
+  const candidate = typeof rawExpression === 'string' && rawExpression.trim()
+    ? rawExpression.trim()
+    : DEFAULT_DAILY_ORDERS_CRON;
+  if (parseDailyCronExpression(candidate)) {
+    return candidate;
+  }
+  console.warn(`⚠️ Nieprawidłowy format CRON (${candidate}) dla raportów dziennych. Używam wartości domyślnej: ${DEFAULT_DAILY_ORDERS_CRON}.`);
+  return DEFAULT_DAILY_ORDERS_CRON;
 }
 
 function getCachedValue(cacheRef, timestampRef) {
@@ -1676,6 +1688,7 @@ async function processDailyOrders(referenceDate = new Date()) {
     const reportOrders = orders
       .map((order, index) => mapOrderToReportEntry(order, index))
       .filter(Boolean);
+    await hydrateOrderEntriesWithFirstName(reportOrders);
 
     const totals = summarizeOrdersForReport(reportOrders);
     const pickupDates = reportOrders
@@ -2792,6 +2805,44 @@ const Order = mongoose.model("Order", new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 }));
 
+async function hydrateOrderEntriesWithFirstName(orderEntries) {
+  if (!Array.isArray(orderEntries) || !orderEntries.length) {
+    return;
+  }
+  const targets = orderEntries.filter((entry) => entry && (!entry.firstName || !entry.firstName.trim()) && entry.orderId);
+  if (!targets.length) {
+    return;
+  }
+  const uniqueIds = Array.from(new Set(targets.map((entry) => entry.orderId).filter(Boolean)));
+  if (!uniqueIds.length) {
+    return;
+  }
+  const docs = await Order.find({ _id: { $in: uniqueIds } })
+    .select({ firstName: 1 })
+    .lean();
+  if (!docs || !docs.length) {
+    return;
+  }
+  const lookup = new Map(docs.map((doc) => [String(doc._id), (doc.firstName || '').trim()]));
+  targets.forEach((entry) => {
+    const name = lookup.get(entry.orderId);
+    if (name) {
+      entry.firstName = name;
+    }
+  });
+}
+
+async function hydrateReportsWithCustomerNames(reports) {
+  if (!reports) {
+    return;
+  }
+  const collect = (report) => (report && Array.isArray(report.orders) ? report.orders : []);
+  const entries = Array.isArray(reports)
+    ? reports.flatMap((report) => collect(report))
+    : collect(reports);
+  await hydrateOrderEntriesWithFirstName(entries);
+}
+
 const orderReportProductSchema = new mongoose.Schema({
   name: { type: String, default: '' },
   quantity: { type: Number, default: 0 },
@@ -2964,6 +3015,7 @@ app.get('/api/order-reports', async (req, res) => {
       .sort({ reportDate: -1 })
       .limit(limit)
       .lean();
+    await hydrateReportsWithCustomerNames(reports);
     res.json(reports);
   } catch (err) {
     console.error('❌ Błąd pobierania zestawień zamówień:', err);
@@ -2981,6 +3033,7 @@ app.get('/api/order-reports/:reportDate', async (req, res) => {
     if (!report) {
       return res.status(404).json({ error: 'Nie znaleziono zestawienia dla wskazanej daty' });
     }
+    await hydrateReportsWithCustomerNames(report);
     res.json(report);
   } catch (err) {
     console.error('❌ Błąd pobierania zestawienia zamówień:', err);

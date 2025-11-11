@@ -15,6 +15,7 @@ const removeDiscountButton = document.getElementById("removeDiscountButton");
 const discountFeedback = document.getElementById("discountFeedback");
 const pickupDateInput = document.getElementById("pickupDate");
 const pickupAvailabilityNotice = document.getElementById("pickupAvailabilityNotice");
+const firstNameInput = document.getElementById("firstName");
 
 const currencyFormatter = new Intl.NumberFormat('pl-PL', { style: 'currency', currency: 'PLN' });
 const PRODUCT_DAY_LABELS = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela'];
@@ -565,11 +566,24 @@ if (orderForm) {
       return;
     }
 
+    const fallbackFirstNameEl = typeof document !== 'undefined' ? document.getElementById("firstName") : null;
+    const firstNameSource = firstNameInput || fallbackFirstNameEl;
+    const firstName = firstNameSource && typeof firstNameSource.value === 'string'
+      ? firstNameSource.value.trim()
+      : '';
     const email = document.getElementById("email").value.trim();
     const phone = document.getElementById("phone").value.trim();
     const comment = document.getElementById("comment").value.trim();
     const paymentInput = orderForm.querySelector("input[name='payment']:checked");
     const payment = paymentInput ? paymentInput.value : 'place';
+
+    if (!firstName || firstName.length < 2) {
+      showOrderMessage('error', 'Podaj swoje imię, abyśmy mogli przygotować zamówienie.');
+      if (firstNameInput && typeof firstNameInput.focus === 'function') {
+        firstNameInput.focus();
+      }
+      return;
+    }
 
     if (!(selectedPickupDate instanceof Date)) {
       showOrderMessage('error', 'Wybierz datę odbioru z kalendarza.');
@@ -615,6 +629,7 @@ if (orderForm) {
     }
 
     const order = {
+      firstName,
       email,
       phone,
       comment,

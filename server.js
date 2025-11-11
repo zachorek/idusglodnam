@@ -1088,16 +1088,23 @@ function createOrderEmailContent(order) {
   const comment = typeof safeOrder.comment === 'string' ? safeOrder.comment : '';
   const discountPercent = Number(safeOrder.discountPercent) || 0;
   const discountAmount = Number(safeOrder.discountAmount) || 0;
+  const firstName = typeof safeOrder.firstName === 'string' ? safeOrder.firstName.trim() : '';
   const pickupReadyTimeLabel = typeof safeOrder.pickupReadyTimeLabel === 'string'
     ? safeOrder.pickupReadyTimeLabel.trim()
     : '';
 
   const pickupDateDisplay = pickupDate ? formatDateForDisplay(`${pickupDate}T00:00:00`) : '';
+  const introLine = firstName
+    ? `Dzięki ${firstName} za zamówienie świeżego pieczywa u Chachora!`
+    : 'Dziękujemy za zamówienie w Chachor Piecze.';
+  const introSubline = firstName
+    ? 'Już zaczynamy przygotowania - poniżej znajdziesz szczegóły zamówienia.'
+    : 'Potwierdzamy otrzymanie zamówienia w Chachor Piecze.';
 
   const summaryLines = [
-    'Dzień dobry,',
+    introLine,
     '',
-    'Potwierdzamy otrzymanie zamówienia w Chachor Piecze.',
+    introSubline,
     ''
   ];
 
@@ -1205,6 +1212,13 @@ ${productRows.trim()}
     ? `<img src="${escapeHtml(logoUrl)}" alt="Chachor Piecze" class="brand-logo" width="160" style="max-width: 160px; height: auto; display: block; margin: 0 auto 10px;" />`
     : `<div class="brand-name">Chachor Piecze</div>`;
 
+  const introHtmlPrimary = firstName
+    ? `Dzięki ${escapeHtml(firstName)}, za zamówienie w Chachor Piecze.`
+    : 'Dziękujemy za zamówienie w Chachor Piecze.';
+  const introHtmlSecondary = firstName
+    ? 'Już zaczynamy przygotowania — poniżej znajdziesz szczegóły zamówienia.'
+    : 'Potwierdzamy otrzymanie zamówienia w Chachor Piecze.';
+
   const html = `<!DOCTYPE html>
   <html lang="pl">
   <head>
@@ -1259,8 +1273,8 @@ ${productRows.trim()}
           <p class="brand-subtitle">Świeże wypieki każdego dnia</p>
         </header>
         <main>
-          <p class="intro">Dzień dobry,</p>
-          <p class="intro">Potwierdzamy otrzymanie zamówienia w Chachor Piecze.</p>
+          <p class="intro">${introHtmlPrimary}</p>
+          <p class="intro">${introHtmlSecondary}</p>
           <section class="products-section">
             <h2 class="section-title" style="font-size:1.1rem;font-weight:600;margin:0 0 12px;color:#6d3d23;">Zamówione produkty</h2>
 ${productsTableHtml.trim()}
@@ -1429,6 +1443,7 @@ function mapOrderToReportEntry(order, index = 0) {
 
   return {
     orderId: String(order._id || order.orderId || ''),
+    firstName: typeof order.firstName === 'string' ? order.firstName : '',
     email: typeof order.email === 'string' ? order.email : '',
     phone: typeof order.phone === 'string' ? order.phone : '',
     payment: typeof order.payment === 'string' ? order.payment : '',
@@ -2748,6 +2763,7 @@ app.get('/:page', (req, res, next) => {
 });
 
 const Order = mongoose.model("Order", new mongoose.Schema({
+  firstName: { type: String, default: '' },
   email: String,
   phone: String,
   comment: String,
@@ -2780,6 +2796,7 @@ const orderReportProductSchema = new mongoose.Schema({
 const orderReportEntrySchema = new mongoose.Schema({
   sequenceNumber: { type: Number },
   orderId: { type: String, default: '' },
+  firstName: { type: String, default: '' },
   email: { type: String, default: '' },
   phone: { type: String, default: '' },
   payment: { type: String, default: '' },
@@ -2814,6 +2831,10 @@ const OrderReport = mongoose.model('OrderReport', new mongoose.Schema({
 app.post("/api/orders", async (req, res) => {
   try {
     const products = Array.isArray(req.body.products) ? req.body.products : [];
+    const firstName = typeof req.body.firstName === 'string' ? req.body.firstName.trim().slice(0, 80) : '';
+    if (!firstName) {
+      return res.status(400).json({ error: 'Podaj imię, abyśmy mogli przygotować zamówienie.' });
+    }
     const pickupDate = normalizeDateInput(req.body.pickupDate);
     if (!pickupDate) {
       return res.status(400).json({ error: 'Wybierz datę odbioru.' });
@@ -2900,6 +2921,7 @@ app.post("/api/orders", async (req, res) => {
     }
 
     const order = new Order({
+      firstName,
       email: typeof req.body.email === 'string' ? req.body.email : '',
       phone: typeof req.body.phone === 'string' ? req.body.phone : '',
       comment: typeof req.body.comment === 'string' ? req.body.comment : '',

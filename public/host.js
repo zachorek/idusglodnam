@@ -15,6 +15,8 @@ const discountCodeInput = document.getElementById("discountCode");
 const discountPercentInput = document.getElementById("discountPercent");
 const productAvailabilityDays = document.getElementById("productAvailabilityDays");
 const productAvailabilityAll = document.getElementById("productAvailabilityAll");
+const productPickupTimesSection = document.getElementById("productPickupTimes");
+const productPickupTimesGrid = document.getElementById("productPickupTimesGrid");
 const aboutForm = document.getElementById("aboutForm");
 const aboutTextInput = document.getElementById("aboutText");
 const aboutImageInput = document.getElementById("aboutImage");
@@ -54,6 +56,7 @@ const PRODUCTS_CACHE_KEY = 'chachor.productsCache';
 
 const DAYS_OF_WEEK = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela'];
 const PRODUCT_DAY_ABBREVIATIONS = ['PN', 'WT', 'ŚR', 'CZ', 'PT', 'SO', 'ND'];
+const ALL_DAY_INDICES = DAYS_OF_WEEK.map((_, index) => index);
 const MAX_AVAILABILITY_TILES = 6;
 const DEFAULT_ABOUT_TEXT = 'Chachor Piecze to niewielki zespół piekarzy i cukierników, którzy robią codzienne wypieki w rytmie miasta.';
 const DEFAULT_ACCESSIBILITY_TAGLINE = 'Sprawdź, co serwujemy w poszczególne dni tygodnia i kiedy możesz odebrać swoje wypieki.';
@@ -239,10 +242,35 @@ if (hostForm) {
     formData.append('image', imageFile);
 
     const selectedDays = getSelectedProductAvailabilityDays();
-    if (productAvailabilityAll && productAvailabilityAll.checked) {
+    const availabilityIsDaily = Boolean(productAvailabilityAll && productAvailabilityAll.checked);
+    if (availabilityIsDaily) {
       formData.append('availabilityDays', 'ALL');
     } else {
       formData.append('availabilityDays', JSON.stringify(selectedDays));
+    }
+
+    const pickupDayIndices = availabilityIsDaily ? ALL_DAY_INDICES.slice() : selectedDays.slice();
+    if (pickupDayIndices.length) {
+      const {
+        payload: pickupTimesPayload,
+        missingDays,
+        extraDays
+      } = collectPickupTimesPayload(pickupDayIndices);
+
+      if (extraDays.length) {
+        const blockedLabels = Array.from(new Set(extraDays))
+          .map((dayIndex) => DAYS_OF_WEEK[dayIndex] || `Dzień ${dayIndex + 1}`);
+        hostMessage.innerHTML = `<p style="color:red">Godziny odbioru możesz ustawić tylko w zaznaczonych dniach. Usuń wpisy dla: ${blockedLabels.join(', ')}</p>`;
+        return;
+      }
+
+      if (missingDays.length) {
+        const missingLabels = missingDays.map((dayIndex) => DAYS_OF_WEEK[dayIndex] || `Dzień ${dayIndex + 1}`);
+        hostMessage.innerHTML = `<p style="color:red">Podaj godzinę odbioru dla: ${missingLabels.join(', ')}</p>`;
+        return;
+      }
+
+      formData.append('pickupTimes', JSON.stringify(pickupTimesPayload));
     }
 
     try {
@@ -270,6 +298,7 @@ if (hostForm) {
       hostMessage.innerHTML = `<p style="color:green">Produkt "${data.name}" został dodany!</p>`;
       hostForm.reset();
       resetProductAvailabilitySelector();
+      resetProductPickupTimes();
       if (imageInput) {
         imageInput.value = '';
       }
@@ -319,19 +348,21 @@ function renderProductAvailabilityToggles() {
     label.append(input, tile);
     productAvailabilityDays.appendChild(label);
   });
+
+  updateProductPickupTimesVisibility();
 }
 
 function handleProductAvailabilityDayChange() {
-  if (!productAvailabilityAll) {
-    return;
-  }
   const checkboxes = getProductAvailabilityCheckboxes();
-  if (!checkboxes.length) {
-    productAvailabilityAll.checked = false;
-    return;
+  if (productAvailabilityAll) {
+    if (!checkboxes.length) {
+      productAvailabilityAll.checked = false;
+    } else {
+      const everyChecked = checkboxes.every((checkbox) => checkbox.checked);
+      productAvailabilityAll.checked = everyChecked;
+    }
   }
-  const everyChecked = checkboxes.every((checkbox) => checkbox.checked);
-  productAvailabilityAll.checked = everyChecked;
+  updateProductPickupTimesVisibility();
 }
 
 function handleProductAvailabilityAllToggle(event) {
@@ -357,6 +388,133 @@ function resetProductAvailabilitySelector() {
   if (productAvailabilityAll) {
     productAvailabilityAll.checked = false;
   }
+  resetProductPickupTimes();
+}
+
+function renderProductPickupTimeInputs() {
+  if (!productPickupTimesGrid || productPickupTimesGrid.dataset.initialized === 'true') {
+    return;
+  }
+  productPickupTimesGrid.dataset.initialized = 'true';
+  productPickupTimesGrid.innerHTML = '';
+  DAYS_OF_WEEK.forEach((dayName, index) => {
+    const card = document.createElement('div');
+    card.className = 'host-pickup-time-card';
+    card.dataset.dayIndex = String(index);
+    card.hidden = true;
+
+    const dayLabel = document.createElement('span');
+    dayLabel.className = 'host-pickup-time-card__day';
+    dayLabel.textContent = dayName;
+
+    const input = document.createElement('input');
+    input.type = 'time';
+    input.step = 300;
+    input.placeholder = '07:30';
+    input.autocomplete = 'off';
+    input.className = 'host-pickup-time-card__input';
+    input.dataset.dayIndex = String(index);
+    input.disabled = true;
+
+    card.append(dayLabel, input);
+    productPickupTimesGrid.appendChild(card);
+  });
+}
+
+function updateProductPickupTimesVisibility() {
+  if (!productPickupTimesSection || !productPickupTimesGrid) {
+    return;
+  }
+  renderProductPickupTimeInputs();
+  const selectedDays = productAvailabilityAll && productAvailabilityAll.checked
+    ? ALL_DAY_INDICES.slice()
+    : getSelectedProductAvailabilityDays();
+  const hasSelection = selectedDays.length > 0;
+  productPickupTimesSection.hidden = !hasSelection;
+  productPickupTimesSection.setAttribute('aria-hidden', hasSelection ? 'false' : 'true');
+  const cards = Array.from(productPickupTimesGrid.querySelectorAll('.host-pickup-time-card'));
+  cards.forEach((card) => {
+    const dayIndex = Number(card.dataset.dayIndex);
+    const isActive = selectedDays.includes(dayIndex);
+    const input = card.querySelector('input[type="time"]');
+    card.hidden = !isActive;
+    if (input) {
+      input.disabled = !isActive;
+      input.required = isActive;
+      if (!isActive) {
+        input.value = '';
+      }
+    }
+  });
+}
+
+function resetProductPickupTimes() {
+  if (!productPickupTimesSection || !productPickupTimesGrid) {
+    return;
+  }
+  productPickupTimesSection.hidden = true;
+  productPickupTimesSection.setAttribute('aria-hidden', 'true');
+  Array.from(productPickupTimesGrid.querySelectorAll('.host-pickup-time-card')).forEach((card) => {
+    card.hidden = true;
+    const input = card.querySelector('input[type="time"]');
+    if (input) {
+      input.value = '';
+      input.required = false;
+      input.disabled = true;
+    }
+  });
+}
+
+function getPickupTimeInput(dayIndex) {
+  if (!productPickupTimesGrid) {
+    return null;
+  }
+  return productPickupTimesGrid.querySelector(`.host-pickup-time-card[data-day-index="${dayIndex}"] input[type="time"]`);
+}
+
+function collectPickupTimesPayload(dayIndices) {
+  const payload = {};
+  const missingDays = [];
+  const extraDays = [];
+  if (!Array.isArray(dayIndices) || !dayIndices.length) {
+    return { payload, missingDays, extraDays };
+  }
+
+  const allowedSet = new Set(
+    dayIndices
+      .map((value) => Number(value))
+      .filter((num) => Number.isInteger(num))
+  );
+
+  dayIndices.forEach((dayIndex) => {
+    const input = getPickupTimeInput(dayIndex);
+    if (!input) {
+      missingDays.push(dayIndex);
+      return;
+    }
+    const value = (input.value || '').trim();
+    if (!value) {
+      missingDays.push(dayIndex);
+    } else {
+      payload[dayIndex] = value;
+    }
+  });
+
+  if (productPickupTimesGrid) {
+    const rogueInputs = Array.from(productPickupTimesGrid.querySelectorAll('.host-pickup-time-card input[type="time"]'));
+    rogueInputs.forEach((input) => {
+      const value = (input.value || '').trim();
+      if (!value) {
+        return;
+      }
+      const dayIndex = Number(input.dataset.dayIndex);
+      if (!allowedSet.has(dayIndex)) {
+        extraDays.push(dayIndex);
+      }
+    });
+  }
+
+  return { payload, missingDays, extraDays };
 }
 
 function parseAvailabilityValue(value) {

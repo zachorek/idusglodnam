@@ -355,6 +355,15 @@ const Category = mongoose.model('Category', CategorySchema);
 
 const daysOfWeek = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela'];
 
+function formatDayList(dayIndices) {
+  if (!Array.isArray(dayIndices) || !dayIndices.length) {
+    return '';
+  }
+  return dayIndices
+    .map((dayIndex) => (Number.isInteger(dayIndex) && daysOfWeek[dayIndex]) ? daysOfWeek[dayIndex] : `Dzień ${Number(dayIndex) + 1}`)
+    .join(', ');
+}
+
 const availabilityEntrySchema = new mongoose.Schema({
   product: { type: String, default: '' },
   availableFrom: { type: String, default: '' }
@@ -395,6 +404,275 @@ const AccessibilityContent = mongoose.model('AccessibilityContent', new mongoose
   heroImageUrl: { type: String, default: '' },
   heroImageKey: { type: String, default: '' }
 }, { timestamps: true }));
+
+const PICKUP_TIME_CACHE_TTL_MS = 5 * 60 * 1000;
+const pickupTimeCache = new Map();
+
+function invalidatePickupTimeCache(dayIndex) {
+  if (Number.isInteger(dayIndex)) {
+    pickupTimeCache.delete(dayIndex);
+    return;
+  }
+  pickupTimeCache.clear();
+}
+
+function normalizePickupTimeString(value) {
+  if (!value || (typeof value !== 'string' && typeof value !== 'number')) {
+    return '';
+  }
+  const raw = String(value).trim();
+  if (!raw) {
+    return '';
+  }
+  const match = /^(\d{1,2})(?::(\d{1,2}))?$/u.exec(raw);
+  if (!match) {
+    return '';
+  }
+  const hour = Number(match[1]);
+  const minute = match[2] !== undefined ? Number(match[2]) : 0;
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23) {
+    return '';
+  }
+  if (!Number.isInteger(minute) || minute < 0 || minute > 59) {
+    return '';
+  }
+  return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+}
+
+async function fetchPickupReadyTimeForDay(dayIndex) {
+  if (!Number.isInteger(dayIndex) || dayIndex < 0 || dayIndex > 6) {
+    return '';
+  }
+  const cached = pickupTimeCache.get(dayIndex);
+  const now = Date.now();
+  if (cached && cached.expires > now) {
+    return cached.value;
+  }
+  let value = '';
+  try {
+    const record = await Availability.findOne({ dayIndex }).lean();
+    if (record && Array.isArray(record.entries)) {
+      const times = record.entries
+        .map((entry) => normalizePickupTimeString(entry && entry.availableFrom))
+        .filter(Boolean)
+        .sort();
+      value = times.length ? times[0] : '';
+    }
+  } catch (err) {
+    console.warn('Nie udało się pobrać godzin odbioru dla dnia', dayIndex, err);
+  }
+  pickupTimeCache.set(dayIndex, {
+    value,
+    expires: now + PICKUP_TIME_CACHE_TTL_MS
+  });
+  return value;
+}
+
+async function resolvePickupReadyTimeLabel(order) {
+  if (!order) {
+    return '';
+  }
+  let dayIndex = Number.isInteger(order.pickupDayIndex) ? order.pickupDayIndex : null;
+  if (!Number.isInteger(dayIndex)) {
+    dayIndex = getDayIndexFromDateString(order.pickupDate);
+  }
+  if (!Number.isInteger(dayIndex)) {
+    return '';
+  }
+  const time = await fetchPickupReadyTimeForDay(dayIndex);
+  return time ? `od ${time}` : '';
+}
+
+function parsePickupTimesInput(raw) {
+  if (raw === undefined || raw === null) {
+    return new Map();
+  }
+  let parsed = raw;
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      return new Map();
+    }
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch (err) {
+      return new Map();
+    }
+  }
+  const map = new Map();
+  const assignValue = (dayIndexCandidate, value) => {
+    const dayIndex = Number(dayIndexCandidate);
+    const normalizedTime = normalizePickupTimeString(value);
+    if (!Number.isInteger(dayIndex) || dayIndex < 0 || dayIndex > 6 || !normalizedTime) {
+      return;
+    }
+    map.set(dayIndex, normalizedTime);
+  };
+  if (Array.isArray(parsed)) {
+    parsed.forEach((entry) => {
+      if (!entry || typeof entry !== 'object') {
+        return;
+      }
+      const dayKey = entry.dayIndex !== undefined ? entry.dayIndex : entry.day;
+      const value = entry.availableFrom || entry.time || entry.value;
+      assignValue(dayKey, value);
+    });
+  } else if (parsed && typeof parsed === 'object') {
+    Object.entries(parsed).forEach(([key, value]) => {
+      assignValue(key, value);
+    });
+  }
+  return map;
+}
+
+function filterPickupTimesByAvailability(pickupTimesMap, availabilityDays) {
+  if (!pickupTimesMap || pickupTimesMap.size === 0) {
+    return new Map();
+  }
+  const allowedDays = Array.isArray(availabilityDays)
+    ? availabilityDays.map((day) => Number(day)).filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)
+    : [];
+  if (!allowedDays.length) {
+    return new Map();
+  }
+  const allowedSet = new Set(allowedDays);
+  const filtered = new Map();
+  pickupTimesMap.forEach((time, dayIndex) => {
+    if (allowedSet.has(dayIndex)) {
+      filtered.set(dayIndex, time);
+    }
+  });
+  return filtered;
+}
+
+function validatePickupTimesForAvailability(availabilityDays, pickupTimesMap) {
+  const normalizedAvailability = Array.isArray(availabilityDays)
+    ? availabilityDays
+        .map((day) => Number(day))
+        .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)
+    : [];
+  const availabilitySet = new Set(normalizedAvailability);
+  const missingDays = [];
+  const extraDays = [];
+
+  if (!pickupTimesMap || pickupTimesMap.size === 0) {
+    if (availabilitySet.size) {
+      missingDays.push(...Array.from(availabilitySet.values()));
+      return { valid: false, missingDays, extraDays };
+    }
+    return { valid: true, missingDays, extraDays };
+  }
+
+  availabilitySet.forEach((dayIndex) => {
+    if (!pickupTimesMap.has(dayIndex)) {
+      missingDays.push(dayIndex);
+    }
+  });
+
+  pickupTimesMap.forEach((_, dayIndex) => {
+    if (!availabilitySet.has(dayIndex)) {
+      extraDays.push(dayIndex);
+    }
+  });
+
+  return {
+    valid: missingDays.length === 0 && extraDays.length === 0,
+    missingDays,
+    extraDays
+  };
+}
+
+function buildPickupTimesValidationMessage(validationResult) {
+  if (!validationResult || validationResult.valid) {
+    return '';
+  }
+  const parts = [];
+  if (validationResult.missingDays && validationResult.missingDays.length) {
+    parts.push(`Brak godzin odbioru dla: ${formatDayList(validationResult.missingDays)}.`);
+  }
+  if (validationResult.extraDays && validationResult.extraDays.length) {
+    parts.push(`Godziny odbioru można ustawić tylko w dniach dostępności. Usuń wpisy dla: ${formatDayList(validationResult.extraDays)}.`);
+  }
+  return parts.join(' ') || 'Nieprawidłowe godziny odbioru.';
+}
+
+async function upsertPickupTimesForProduct(productName, availabilityDays, pickupTimesMap) {
+  if (!productName || !Array.isArray(availabilityDays) || !availabilityDays.length) {
+    return;
+  }
+  if (!pickupTimesMap || pickupTimesMap.size === 0) {
+    return;
+  }
+  const filtered = filterPickupTimesByAvailability(pickupTimesMap, availabilityDays);
+  if (!filtered.size) {
+    return;
+  }
+  for (const [dayIndex, availableFrom] of filtered.entries()) {
+    await upsertSingleAvailabilityEntry(dayIndex, productName, availableFrom);
+  }
+}
+
+async function upsertSingleAvailabilityEntry(dayIndex, productName, availableFrom) {
+  if (!Number.isInteger(dayIndex) || dayIndex < 0 || dayIndex > 6 || !productName || !availableFrom) {
+    return;
+  }
+  const trimmedName = productName.trim();
+  try {
+    const record = await Availability.findOne({ dayIndex });
+    if (!record) {
+      await Availability.create({
+        dayIndex,
+        entries: [{ product: trimmedName, availableFrom }]
+      });
+      invalidatePickupTimeCache(dayIndex);
+      return;
+    }
+    const entries = Array.isArray(record.entries) ? record.entries : [];
+    const normalizedTarget = trimmedName.toLowerCase();
+    const existingIndex = entries.findIndex((entry) => String(entry && entry.product || '').trim().toLowerCase() === normalizedTarget);
+    if (existingIndex === -1) {
+      entries.push({ product: trimmedName, availableFrom });
+    } else {
+      entries[existingIndex].product = trimmedName;
+      entries[existingIndex].availableFrom = availableFrom;
+    }
+    record.entries = entries;
+    await record.save();
+    invalidatePickupTimeCache(dayIndex);
+  } catch (err) {
+    console.error(`Nie udało się zaktualizować godzin odbioru dla dnia ${dayIndex}:`, err);
+  }
+}
+
+async function removeProductFromAvailability(productName) {
+  if (!productName) {
+    return;
+  }
+  const normalized = String(productName).trim().toLowerCase();
+  if (!normalized) {
+    return;
+  }
+  try {
+    const records = await Availability.find();
+    await Promise.all(records.map(async (record) => {
+      if (!record || !Array.isArray(record.entries) || !record.entries.length) {
+        return;
+      }
+      const filteredEntries = record.entries.filter((entry) => {
+        const entryName = String(entry && entry.product ? entry.product : '').trim().toLowerCase();
+        return entryName !== normalized;
+      });
+      if (filteredEntries.length === record.entries.length) {
+        return;
+      }
+      record.entries = filteredEntries;
+      await record.save();
+      invalidatePickupTimeCache(record.dayIndex);
+    }));
+  } catch (err) {
+    console.error('Nie udało się usunąć produktu z harmonogramu dostępności:', err);
+  }
+}
 
 // Per-product per-day stock (capacity and reserved)
 const productStockSchema = new mongoose.Schema({
@@ -704,6 +982,9 @@ function createOrderEmailContent(order) {
   const comment = typeof safeOrder.comment === 'string' ? safeOrder.comment : '';
   const discountPercent = Number(safeOrder.discountPercent) || 0;
   const discountAmount = Number(safeOrder.discountAmount) || 0;
+  const pickupReadyTimeLabel = typeof safeOrder.pickupReadyTimeLabel === 'string'
+    ? safeOrder.pickupReadyTimeLabel.trim()
+    : '';
 
   const pickupDateDisplay = pickupDate ? formatDateForDisplay(`${pickupDate}T00:00:00`) : '';
 
@@ -735,6 +1016,9 @@ function createOrderEmailContent(order) {
   }
   if (pickupDate) {
     summaryLines.push(`Data odbioru: ${pickupDateDisplay || pickupDate}`);
+  }
+  if (pickupReadyTimeLabel) {
+    summaryLines.push(`Godzina odbioru: ${pickupReadyTimeLabel}`);
   }
   if (comment) {
     summaryLines.push('');
@@ -784,6 +1068,20 @@ ${productRows.trim()}
           </div>
         `
     : '';
+
+  const pickupTimeRowHtml = pickupReadyTimeLabel
+    ? `
+            <div class="summary-row summary-row--link">
+              <strong>Godzina odbioru:&nbsp;</strong>
+              <span class="summary-value">${escapeHtml(pickupReadyTimeLabel)}</span>
+            </div>
+        `
+    : `
+            <div class="summary-row summary-row--link">
+              <strong>Godziny odbioru:&nbsp;</strong>
+              <span class="summary-value"><a class="summary-link" href="https://chachorpiecze.pl/accessibility" target="_blank" rel="noopener noreferrer">Sprawdź od której możesz odebrać zamówienie</a></span>
+            </div>
+        `;
 
   const commentBlockHtml = comment
     ? `
@@ -879,10 +1177,7 @@ ${pickupDate ? `
               <span class="summary-value">${escapeHtml(pickupDateDisplay || pickupDate)}</span>
             </div>
 ` : ''}
-            <div class="summary-row summary-row--link">
-              <strong>Godziny odbioru:&nbsp;</strong>
-              <span class="summary-value"><a class="summary-link" href="https://chachorpiecze.pl/accessibility" target="_blank" rel="noopener noreferrer">Sprawdź od której możesz odebrać zamówienie</a></span>
-            </div>
+${pickupTimeRowHtml.trim()}
 ${commentBlockHtml.trim()}
           </section>
           <p class="closing">Do zobaczenia w piekarni!</p>
@@ -913,6 +1208,15 @@ async function sendOrderConfirmationEmail(order) {
   if (!fromAddress) {
     console.warn('⚠️ Mailing pominięty: brak adresu nadawcy (MAIL_FROM).');
     return;
+  }
+
+  try {
+    const pickupReadyTimeLabel = await resolvePickupReadyTimeLabel(order);
+    if (pickupReadyTimeLabel) {
+      order.pickupReadyTimeLabel = pickupReadyTimeLabel;
+    }
+  } catch (err) {
+    console.warn('Nie udało się ustalić godziny odbioru dla zamówienia:', err);
   }
 
   const fromName = process.env.MAIL_FROM_NAME || 'Chachor Piecze';
@@ -1729,6 +2033,20 @@ app.post('/api/products', upload.single('image'), async (req, res) => {
   try {
     const { name, price, desc, category } = req.body;
     const availabilityDays = normalizeAvailabilityDaysInput(req.body.availabilityDays);
+    const pickupTimesMap = parsePickupTimesInput(req.body.pickupTimes);
+    const pickupTimesProvided = pickupTimesMap && pickupTimesMap.size > 0;
+    if (pickupTimesProvided) {
+      const pickupValidation = validatePickupTimesForAvailability(availabilityDays, pickupTimesMap);
+      if (!pickupValidation.valid) {
+        const message = buildPickupTimesValidationMessage(pickupValidation);
+        return res.status(400).json({ error: message });
+      }
+    }
+    const pickupValidation = validatePickupTimesForAvailability(availabilityDays, pickupTimesMap);
+    if (!pickupValidation.valid) {
+      const message = buildPickupTimesValidationMessage(pickupValidation);
+      return res.status(400).json({ error: message });
+    }
 
     if (req.fileValidationError) {
       return res.status(400).json({ error: req.fileValidationError });
@@ -1766,6 +2084,7 @@ app.post('/api/products', upload.single('image'), async (req, res) => {
     });
 
     await product.save();
+    await upsertPickupTimesForProduct(product.name, availabilityDays, pickupTimesMap);
     invalidateProductsCache();
     res.json(product);
   } catch (err) {
@@ -1801,6 +2120,7 @@ app.put('/api/products/:id', upload.single('image'), async (req, res) => {
     }
 
     const availabilityDays = normalizeAvailabilityDaysInput(req.body.availabilityDays);
+    const pickupTimesMap = parsePickupTimesInput(req.body.pickupTimes);
 
     const updateSet = {
       name: trimmedName,
@@ -1827,6 +2147,7 @@ app.put('/api/products/:id', upload.single('image'), async (req, res) => {
 
     Object.assign(product, updateSet);
     await product.save();
+    await upsertPickupTimesForProduct(product.name, availabilityDays, pickupTimesMap);
     invalidateProductsCache();
 
     if (uploadedImage && previousAssetReference && previousAssetReference !== uploadedImage.key && previousAssetReference !== uploadedImage.url) {
@@ -2190,6 +2511,8 @@ app.put('/api/availability/:dayIndex', async (req, res) => {
       },
       { new: true, upsert: true, setDefaultsOnInsert: true }
     ).lean();
+
+    invalidatePickupTimeCache(dayIndex);
 
     res.json({
       dayIndex: updated.dayIndex,
@@ -2564,8 +2887,10 @@ app.delete('/api/products/:id', async (req, res) => {
     }
 
     const assetReference = product.imageKey || product.imageUrl;
+    const productName = typeof product.name === 'string' ? product.name.trim() : '';
     await product.deleteOne();
     invalidateProductsCache();
+    await removeProductFromAvailability(productName);
     if (assetReference) {
       await deleteImageFromCloudflare(assetReference);
     }

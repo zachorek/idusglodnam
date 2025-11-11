@@ -1935,6 +1935,50 @@ body.about-gallery-zoom-open {
   line-height: 1.4;
 }
 
+.host-form-card--pickup-times {
+  margin-top: 18px;
+}
+
+.host-pickup-times-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.host-pickup-time-card {
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(91, 70, 54, 0.25);
+  background: rgba(255, 255, 255, 0.9);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: box-shadow 0.2s ease;
+}
+
+.host-pickup-time-card__day {
+  font-weight: 600;
+  color: #5b3b29;
+  font-size: 0.95rem;
+}
+
+.host-pickup-time-card__input {
+  width: 100%;
+  border: 1px solid rgba(91, 70, 54, 0.35);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 0.95rem;
+  color: #4a2d1c;
+  background: #ffffff;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.host-pickup-time-card__input:focus {
+  outline: none;
+  border-color: rgba(91, 70, 54, 0.85);
+  box-shadow: 0 12px 24px rgba(91, 70, 54, 0.2);
+}
+
 .host-field--file input[type="file"] {
   padding: 14px;
   border-radius: 16px;

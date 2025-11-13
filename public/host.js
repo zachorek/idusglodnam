@@ -28,6 +28,15 @@ const aboutGalleryForm = document.getElementById("aboutGalleryForm");
 const aboutGalleryImageInput = document.getElementById("aboutGalleryImage");
 const aboutGalleryList = document.getElementById("aboutGalleryList");
 const aboutGalleryMessage = document.getElementById("aboutGalleryMessage");
+const aboutStoryForm = document.getElementById("aboutStoryForm");
+const aboutStoryTitleInput = document.getElementById("aboutStoryTitleInput");
+const aboutStoryDescriptionInput = document.getElementById("aboutStoryDescriptionInput");
+const aboutStoryMessage = document.getElementById("aboutStoryMessage");
+const aboutHighlightForm = document.getElementById("aboutHighlightForm");
+const aboutHighlightTitleInput = document.getElementById("aboutHighlightTitleInput");
+const aboutHighlightDescriptionInput = document.getElementById("aboutHighlightDescriptionInput");
+const aboutHighlightMessage = document.getElementById("aboutHighlightMessage");
+const aboutHighlightsManager = document.getElementById("aboutHighlightsManager");
 const accessibilityHeroForm = document.getElementById("accessibilityHeroForm");
 const accessibilityHeroImageInput = document.getElementById("accessibilityHeroImage");
 const accessibilityHeroMessage = document.getElementById("accessibilityHeroMessage");
@@ -59,6 +68,10 @@ const PRODUCT_DAY_ABBREVIATIONS = ['PN', 'WT', 'ŚR', 'CZ', 'PT', 'SO', 'ND'];
 const ALL_DAY_INDICES = DAYS_OF_WEEK.map((_, index) => index);
 const MAX_AVAILABILITY_TILES = 6;
 const DEFAULT_ABOUT_TEXT = 'Chachor Piecze to niewielki zespół piekarzy i cukierników, którzy robią codzienne wypieki w rytmie miasta.';
+const DEFAULT_ABOUT_STORY = {
+  title: 'Co robimy na co dzień',
+  description: 'Pieczemy chleb, bułki i słodkie wypieki z prostych składników. Ciasto wyrabiamy ręcznie, a piec rozgrzewamy nad ranem, żebyś mógł odebrać zamówienie jeszcze ciepłe.'
+};
 const DEFAULT_ACCESSIBILITY_TAGLINE = 'Sprawdź, co serwujemy w poszczególne dni tygodnia i kiedy możesz odebrać swoje wypieki.';
 
 let categoriesCache = [];
@@ -66,6 +79,7 @@ let discountCodesCache = [];
 let productGridListenerAttached = false;
 let availabilityMessageTimer = null;
 let aboutGalleryCache = [];
+let aboutHighlightsCache = [];
 let accessibilityHeroCurrentImageSrc = '';
 let hostProductsCache = [];
 let currentEditingProductId = '';
@@ -110,6 +124,19 @@ if (aboutImageInput) {
 
 if (aboutForm) {
   aboutForm.addEventListener('submit', handleAboutFormSubmit);
+}
+
+if (aboutStoryForm) {
+  aboutStoryForm.addEventListener('submit', handleAboutStoryCardSubmit);
+}
+
+if (aboutHighlightForm) {
+  aboutHighlightForm.addEventListener('submit', handleAboutHighlightCreate);
+}
+
+if (aboutHighlightsManager) {
+  aboutHighlightsManager.addEventListener('submit', handleAboutHighlightInlineUpdate);
+  aboutHighlightsManager.addEventListener('click', handleAboutHighlightListClick);
 }
 
 if (aboutGalleryForm) {
@@ -2606,10 +2633,14 @@ async function fetchAboutContent() {
 
     const data = await res.json();
     applyAboutPreview(data);
+    applyAboutStoryCard(data && data.story);
+    renderAboutHighlightsManager(data && data.highlights);
     renderAboutGallery(buildHostGalleryItems(data));
   } catch (err) {
     console.error('Błąd pobierania sekcji O nas:', err);
     applyAboutPreview(null);
+    applyAboutStoryCard(null);
+    renderAboutHighlightsManager(null);
     renderAboutGallery([]);
   }
 }
@@ -2637,6 +2668,119 @@ function applyAboutPreview(data) {
     aboutPreviewImage.hidden = true;
     aboutNoImagePlaceholder.hidden = false;
   }
+}
+
+function resolveStoryPayload(story) {
+  if (!story) {
+    return { ...DEFAULT_ABOUT_STORY };
+  }
+  const title = typeof story.title === 'string' && story.title.trim() ? story.title.trim() : DEFAULT_ABOUT_STORY.title;
+  const description = typeof story.description === 'string' && story.description.trim()
+    ? story.description.trim()
+    : DEFAULT_ABOUT_STORY.description;
+  return { title, description };
+}
+
+function resolveHighlightList(highlights) {
+  const list = Array.isArray(highlights) ? highlights : [];
+  return list
+    .map((item, index) => ({
+      id: item && item._id ? String(item._id) : `highlight-${index}`,
+      title: typeof item.title === 'string' ? item.title : '',
+      description: typeof item.description === 'string' ? item.description : '',
+      order: Number.isFinite(item && item.order) ? item.order : index,
+      isEditable: Boolean(item && item._id)
+    }))
+    .sort((a, b) => {
+      if (a.order === b.order) {
+        return a.id.localeCompare(b.id);
+      }
+      return a.order - b.order;
+    });
+}
+
+function applyAboutStoryCard(story) {
+  const payload = resolveStoryPayload(story);
+  if (aboutStoryTitleInput) {
+    aboutStoryTitleInput.value = payload.title;
+  }
+  if (aboutStoryDescriptionInput) {
+    aboutStoryDescriptionInput.value = payload.description;
+  }
+}
+
+function renderAboutHighlightsManager(highlights) {
+  if (!aboutHighlightsManager) {
+    return;
+  }
+  aboutHighlightsCache = resolveHighlightList(highlights);
+  aboutHighlightsManager.innerHTML = '';
+
+  if (!aboutHighlightsCache.length) {
+    const empty = document.createElement('p');
+    empty.classList.add('host-highlight-empty');
+    empty.textContent = 'Brak kafelków do wyświetlenia.';
+    aboutHighlightsManager.appendChild(empty);
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  aboutHighlightsCache.forEach((item) => {
+    fragment.appendChild(buildHostHighlightItem(item));
+  });
+  aboutHighlightsManager.appendChild(fragment);
+}
+
+function buildHostHighlightItem(item) {
+  const wrapper = document.createElement('article');
+  wrapper.classList.add('host-highlight-item');
+
+  const form = document.createElement('form');
+  form.dataset.highlightId = item.id;
+
+  const titleLabel = document.createElement('label');
+  titleLabel.classList.add('about-field');
+  titleLabel.innerHTML = '<span>Tytuł</span>';
+  const titleInput = document.createElement('input');
+  titleInput.type = 'text';
+  titleInput.value = item.title || '';
+  titleInput.required = true;
+  titleInput.placeholder = 'np. Jak pracujemy';
+  titleInput.dataset.highlightField = 'title';
+  titleLabel.appendChild(titleInput);
+
+  const descLabel = document.createElement('label');
+  descLabel.classList.add('about-field');
+  descLabel.innerHTML = '<span>Opis</span>';
+  const descTextarea = document.createElement('textarea');
+  descTextarea.rows = 2;
+  descTextarea.value = item.description || '';
+  descTextarea.required = true;
+  descTextarea.placeholder = 'Dodaj opis kafelka';
+  descTextarea.dataset.highlightField = 'description';
+  descLabel.appendChild(descTextarea);
+
+  form.append(titleLabel, descLabel);
+
+  const actions = document.createElement('div');
+  actions.classList.add('host-highlight-actions');
+
+  const saveButton = document.createElement('button');
+  saveButton.type = 'submit';
+  saveButton.classList.add('host-primary-btn', 'host-primary-btn--compact');
+  saveButton.textContent = 'Zapisz zmiany';
+  saveButton.disabled = !item.isEditable;
+
+  const deleteButton = document.createElement('button');
+  deleteButton.type = 'button';
+  deleteButton.classList.add('host-secondary-btn', 'host-secondary-btn--danger');
+  deleteButton.textContent = 'Usuń';
+  deleteButton.dataset.highlightDelete = item.id;
+  deleteButton.disabled = !item.isEditable;
+
+  actions.append(saveButton, deleteButton);
+  wrapper.append(form, actions);
+  return wrapper;
 }
 
 function getAboutPreviewSrc() {
@@ -2742,6 +2886,153 @@ function handleAboutImageChange(event) {
   reader.readAsDataURL(file);
 }
 
+function getHighlightFormValues(form) {
+  if (!form) {
+    return { title: '', description: '' };
+  }
+  const titleInput = form.querySelector('[data-highlight-field="title"]');
+  const descInput = form.querySelector('[data-highlight-field="description"]');
+  const title = titleInput && typeof titleInput.value === 'string' ? titleInput.value.trim() : '';
+  const description = descInput && typeof descInput.value === 'string' ? descInput.value.trim() : '';
+  return { title, description };
+}
+
+async function handleAboutStoryCardSubmit(event) {
+  event.preventDefault();
+  if (!aboutStoryTitleInput || !aboutStoryDescriptionInput) {
+    return;
+  }
+  const title = aboutStoryTitleInput.value.trim();
+  const description = aboutStoryDescriptionInput.value.trim();
+  if (!title || !description) {
+    setHostMessage(aboutStoryMessage, 'Uzupełnij tytuł i opis kafelka.', 'error');
+    return;
+  }
+  setHostMessage(aboutStoryMessage, 'Zapisuję kafelek...', 'info');
+  try {
+    const res = await fetch('/api/about/story', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, description })
+    });
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({}));
+      const message = payload && payload.error ? payload.error : 'Nie udało się zapisać kafelka.';
+      throw new Error(message);
+    }
+    const data = await res.json();
+    applyAboutStoryCard(data && data.story);
+    setHostMessage(aboutStoryMessage, 'Zapisano kafelek.', 'success');
+  } catch (err) {
+    console.error('Błąd zapisu kafelka historii:', err);
+    setHostMessage(aboutStoryMessage, err && err.message ? err.message : 'Nie udało się zapisać kafelka.', 'error');
+  }
+}
+
+async function handleAboutHighlightCreate(event) {
+  event.preventDefault();
+  if (!aboutHighlightTitleInput || !aboutHighlightDescriptionInput) {
+    return;
+  }
+  const title = aboutHighlightTitleInput.value.trim();
+  const description = aboutHighlightDescriptionInput.value.trim();
+  if (!title || !description) {
+    setHostMessage(aboutHighlightMessage, 'Podaj tytuł i opis kafelka.', 'error');
+    return;
+  }
+  setHostMessage(aboutHighlightMessage, 'Dodaję kafelek...', 'info');
+  try {
+    const res = await fetch('/api/about/highlights', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, description })
+    });
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({}));
+      const message = payload && payload.error ? payload.error : 'Nie udało się dodać kafelka.';
+      throw new Error(message);
+    }
+    const data = await res.json();
+    renderAboutHighlightsManager(data && data.highlights);
+    aboutHighlightTitleInput.value = '';
+    aboutHighlightDescriptionInput.value = '';
+    setHostMessage(aboutHighlightMessage, 'Dodano kafelek.', 'success');
+  } catch (err) {
+    console.error('Błąd dodawania kafelka O nas:', err);
+    setHostMessage(aboutHighlightMessage, err && err.message ? err.message : 'Nie udało się dodać kafelka.', 'error');
+  }
+}
+
+async function handleAboutHighlightInlineUpdate(event) {
+  const form = event.target instanceof HTMLFormElement
+    ? event.target
+    : null;
+  if (!form || !form.dataset.highlightId) {
+    return;
+  }
+  event.preventDefault();
+  const { title, description } = getHighlightFormValues(form);
+  if (!title || !description) {
+    setHostMessage(aboutHighlightMessage, 'Podaj tytuł i opis kafelka.', 'error');
+    return;
+  }
+  setHostMessage(aboutHighlightMessage, 'Zapisuję zmiany...', 'info');
+  try {
+    const res = await fetch(`/api/about/highlights/${encodeURIComponent(form.dataset.highlightId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, description })
+    });
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({}));
+      const message = payload && payload.error ? payload.error : 'Nie udało się zaktualizować kafelka.';
+      throw new Error(message);
+    }
+    const data = await res.json();
+    renderAboutHighlightsManager(data && data.highlights);
+    setHostMessage(aboutHighlightMessage, 'Zaktualizowano kafelek.', 'success');
+  } catch (err) {
+    console.error('Błąd aktualizacji kafelka O nas:', err);
+    setHostMessage(aboutHighlightMessage, err && err.message ? err.message : 'Nie udało się zaktualizować kafelka.', 'error');
+  }
+}
+
+async function handleAboutHighlightListClick(event) {
+  const button = event.target instanceof HTMLElement
+    ? event.target.closest('[data-highlight-delete]')
+    : null;
+  if (!button) {
+    return;
+  }
+  const highlightId = button.getAttribute('data-highlight-delete');
+  if (!highlightId) {
+    return;
+  }
+  if (!window.confirm('Czy na pewno chcesz usunąć ten kafelek?')) {
+    return;
+  }
+  button.disabled = true;
+  setHostMessage(aboutHighlightMessage, 'Usuwam kafelek...', 'info');
+  try {
+    const res = await fetch(`/api/about/highlights/${encodeURIComponent(highlightId)}`, {
+      method: 'DELETE'
+    });
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({}));
+      const message = payload && payload.error ? payload.error : 'Nie udało się usunąć kafelka.';
+      throw new Error(message);
+    }
+    const data = await res.json();
+    renderAboutHighlightsManager(data && data.highlights);
+    setHostMessage(aboutHighlightMessage, 'Kafelek został usunięty.', 'success');
+  } catch (err) {
+    console.error('Błąd usuwania kafelka O nas:', err);
+    setHostMessage(aboutHighlightMessage, err && err.message ? err.message : 'Nie udało się usunąć kafelka.', 'error');
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function getGalleryItemSrc(item) {
   if (!item) {
     return '';
@@ -2793,6 +3084,24 @@ function buildHostGalleryItems(data) {
   }
 
   return list;
+}
+
+function setHostMessage(node, text, variant = 'info') {
+  if (!node) {
+    return;
+  }
+  if (!text) {
+    node.textContent = '';
+    return;
+  }
+  let color = '#6b4a34';
+  if (variant === 'success') {
+    color = '#2d7a46';
+  } else if (variant === 'error') {
+    color = '#c62828';
+  }
+  node.textContent = text;
+  node.style.color = color;
 }
 
 function renderAboutGallery(items) {

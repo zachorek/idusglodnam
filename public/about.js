@@ -1,5 +1,8 @@
 const aboutHero = document.getElementById('aboutHero');
 const aboutDescription = document.getElementById('aboutDescription');
+const aboutStoryTitleNode = document.getElementById('aboutStoryTitle');
+const aboutStoryTextNode = document.getElementById('aboutStoryText');
+const aboutHighlightsList = document.getElementById('aboutHighlightsList');
 const galleryPreview = document.getElementById('aboutGalleryPreview');
 const galleryModal = document.getElementById('aboutGalleryModal');
 const galleryModalGrid = galleryModal ? galleryModal.querySelector('#aboutGalleryModalGrid') : null;
@@ -10,6 +13,20 @@ const zoomClose = zoom ? zoom.querySelector('.about-gallery-zoom__close') : null
 const socialFeed = document.getElementById('aboutSocialFeed');
 
 const DEFAULT_ABOUT_TEXT = 'Chachor Piecze to niewielki zespół piekarzy i cukierników, którzy robią codzienne wypieki w rytmie miasta.';
+const DEFAULT_ABOUT_STORY = {
+  title: 'Co robimy na co dzień',
+  description: 'Pieczemy chleb, bułki i słodkie wypieki z prostych składników. Ciasto wyrabiamy ręcznie, a piec rozgrzewamy nad ranem, żebyś mógł odebrać zamówienie jeszcze ciepłe.'
+};
+const DEFAULT_ABOUT_HIGHLIGHTS = [
+  {
+    title: 'Jak pracujemy',
+    description: 'Stawiamy na rzemieślniczą robotę. Większość wypieków przygotowujemy w krótkich seriach, dzięki czemu łatwo reagujemy na sezon i wasze prośby.'
+  },
+  {
+    title: 'Składniki',
+    description: 'Używamy mąki z lokalnych młynów, dobrej soli i świeżych dodatków. Jeśli coś jest sezonowe, trafia do oferty i szybko znika.'
+  }
+];
 const GALLERY_PREVIEW_LIMIT = 3;
 const SOCIAL_FEED_LIMIT = 3;
 
@@ -126,6 +143,43 @@ function resolveGalleryItemSrc(item) {
   return '';
 }
 
+function resolveStoryContent(story) {
+  if (!story) {
+    return { ...DEFAULT_ABOUT_STORY };
+  }
+  const title = typeof story.title === 'string' && story.title.trim()
+    ? story.title.trim()
+    : DEFAULT_ABOUT_STORY.title;
+  const description = typeof story.description === 'string' && story.description.trim()
+    ? story.description.trim()
+    : DEFAULT_ABOUT_STORY.description;
+  return { title, description };
+}
+
+function resolveHighlightItems(highlights) {
+  const list = Array.isArray(highlights) ? highlights : [];
+  if (!list.length) {
+    return DEFAULT_ABOUT_HIGHLIGHTS.map((item) => ({ ...item }));
+  }
+  return list
+    .map((item, index) => ({
+      id: item && item._id ? String(item._id) : `highlight-${index}`,
+      title: typeof item.title === 'string' && item.title.trim() ? item.title.trim() : '',
+      description: typeof item.description === 'string' && item.description.trim() ? item.description.trim() : '',
+      order: Number.isFinite(item && item.order) ? item.order : index
+    }))
+    .sort((a, b) => {
+      if (a.order === b.order) {
+        return a.id.localeCompare(b.id);
+      }
+      return a.order - b.order;
+    })
+    .map((item) => ({
+      title: item.title || DEFAULT_ABOUT_HIGHLIGHTS[0].title,
+      description: item.description || DEFAULT_ABOUT_HIGHLIGHTS[0].description
+    }));
+}
+
 function normalizeGallery(content) {
   const gallery = Array.isArray(content && content.gallery) ? content.gallery : [];
   return gallery
@@ -165,6 +219,40 @@ function normalizeGallery(content) {
     });
 }
 
+function renderAboutStory(story) {
+  const payload = resolveStoryContent(story);
+  if (aboutStoryTitleNode) {
+    aboutStoryTitleNode.textContent = payload.title;
+  }
+  if (aboutStoryTextNode) {
+    aboutStoryTextNode.textContent = payload.description;
+  }
+}
+
+function buildHighlightCard(item) {
+  const article = document.createElement('article');
+  article.classList.add('glass-panel', 'about-highlight');
+  const title = document.createElement('h3');
+  title.textContent = item.title;
+  const text = document.createElement('p');
+  text.textContent = item.description;
+  article.append(title, text);
+  return article;
+}
+
+function renderAboutHighlights(highlights) {
+  if (!aboutHighlightsList) {
+    return;
+  }
+  const items = resolveHighlightItems(highlights);
+  aboutHighlightsList.innerHTML = '';
+  const fragment = document.createDocumentFragment();
+  items.forEach((item) => {
+    fragment.appendChild(buildHighlightCard(item));
+  });
+  aboutHighlightsList.appendChild(fragment);
+}
+
 function applyAboutContent(content) {
   const heroText = content && typeof content.heroText === 'string' && content.heroText.trim()
     ? content.heroText.trim()
@@ -196,6 +284,9 @@ function applyAboutContent(content) {
       aboutHero.classList.remove('about-hero--with-image');
     }
   }
+
+  renderAboutStory(content && content.story);
+  renderAboutHighlights(content && content.highlights);
 
   galleryData = normalizeGallery(content);
   if (galleryData.length === 0) {

@@ -2219,6 +2219,16 @@ body.about-gallery-zoom-open {
   box-shadow: none;
 }
 
+.host-secondary-btn--danger {
+  color: #a0281d;
+  border-color: rgba(160, 40, 29, 0.45);
+}
+
+.host-secondary-btn--danger:hover:not(:disabled) {
+  background: rgba(160, 40, 29, 0.1);
+  border-color: rgba(160, 40, 29, 0.65);
+}
+
 .host-primary-btn--wide {
   width: 100%;
   max-width: 320px;
@@ -4192,6 +4202,96 @@ body.about-gallery-zoom-open {
   display: flex;
   flex-direction: column;
   gap: 18px;
+}
+
+.host-about-storycard,
+.host-about-highlights {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 18px 40px rgba(91, 70, 54, 0.12);
+}
+
+.host-about-subheader h3 {
+  margin: 0 0 6px;
+  font-size: 1.4rem;
+  color: #573623;
+}
+
+.host-about-subheader p {
+  margin: 0;
+  color: #7a543b;
+}
+
+.host-highlight-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.host-highlight-form--inline {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.host-highlight-form--inline textarea {
+  height: 100%;
+}
+
+.host-highlight-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.host-highlight-item {
+  border: 1px solid rgba(91, 70, 54, 0.18);
+  border-radius: 16px;
+  padding: 16px;
+  background: rgba(255, 249, 239, 0.85);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.host-highlight-item form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.host-highlight-item .host-highlight-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.host-highlight-item .host-secondary-btn {
+  border: 1px solid rgba(91, 70, 54, 0.4);
+  background: transparent;
+  color: #5b4636;
+}
+
+.host-highlight-item .host-secondary-btn--danger {
+  color: #a0281d;
+  border-color: rgba(160, 40, 29, 0.45);
+}
+
+.host-highlight-item .host-secondary-btn--danger:hover:not(:disabled) {
+  background: rgba(160, 40, 29, 0.1);
+  border-color: rgba(160, 40, 29, 0.65);
+}
+
+.host-highlight-empty {
+  margin: 0;
+  color: #7a543b;
+  font-weight: 500;
 }
 
 .host-about-gallery__header h3 {

@@ -253,6 +253,20 @@ if (!SHOULD_SKIP_MONGO) {
 // MODELE
 const ALL_DAY_INDICES = [0, 1, 2, 3, 4, 5, 6];
 const DEFAULT_ABOUT_TEXT = 'Chachor Piecze to niewielki zespół piekarzy i cukierników, którzy robią codzienne wypieki w rytmie miasta.';
+const DEFAULT_ABOUT_STORY = {
+  title: 'Co robimy na co dzień',
+  description: 'Pieczemy chleb, bułki i słodkie wypieki z prostych składników. Ciasto wyrabiamy ręcznie, a piec rozgrzewamy nad ranem, żebyś mógł odebrać zamówienie jeszcze ciepłe.'
+};
+const DEFAULT_ABOUT_HIGHLIGHTS = [
+  {
+    title: 'Jak pracujemy',
+    description: 'Stawiamy na rzemieślniczą robotę. Większość wypieków przygotowujemy w krótkich seriach, dzięki czemu łatwo reagujemy na sezon i wasze prośby.'
+  },
+  {
+    title: 'Składniki',
+    description: 'Używamy mąki z lokalnych młynów, dobrej soli i świeżych dodatków. Jeśli coś jest sezonowe, trafia do oferty i szybko znika.'
+  }
+];
 const DEFAULT_ACCESSIBILITY_TAGLINE = 'Sprawdź, co serwujemy w poszczególne dni tygodnia i kiedy możesz odebrać swoje wypieki.';
 
 function normalizeAvailabilityDayArray(raw) {
@@ -391,11 +405,38 @@ const aboutGalleryItemSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 }, { _id: true });
 
+const aboutStorySchema = new mongoose.Schema({
+  title: { type: String, default: '' },
+  description: { type: String, default: '' }
+}, { _id: false });
+
+const aboutHighlightSchema = new mongoose.Schema({
+  title: { type: String, default: '' },
+  description: { type: String, default: '' },
+  order: { type: Number, default: 0 },
+  createdAt: { type: Date, default: Date.now }
+});
+
 const AboutContent = mongoose.model('AboutContent', new mongoose.Schema({
   heroImageData: String,
   heroImageUrl: { type: String, default: '' },
   heroImageKey: { type: String, default: '' },
-  heroText: { type: String, default: '' },
+  heroText: { type: String, default: DEFAULT_ABOUT_TEXT },
+  story: {
+    type: aboutStorySchema,
+    default: () => ({
+      title: DEFAULT_ABOUT_STORY.title,
+      description: DEFAULT_ABOUT_STORY.description
+    })
+  },
+  highlights: {
+    type: [aboutHighlightSchema],
+    default: () => DEFAULT_ABOUT_HIGHLIGHTS.map((item, index) => ({
+      title: item.title,
+      description: item.description,
+      order: index
+    }))
+  },
   gallery: { type: [aboutGalleryItemSchema], default: [] }
 }, { timestamps: true }));
 
@@ -404,6 +445,138 @@ const AccessibilityContent = mongoose.model('AccessibilityContent', new mongoose
   heroImageUrl: { type: String, default: '' },
   heroImageKey: { type: String, default: '' }
 }, { timestamps: true }));
+
+function cloneDefaultStory() {
+  return {
+    title: DEFAULT_ABOUT_STORY.title,
+    description: DEFAULT_ABOUT_STORY.description
+  };
+}
+
+function cloneDefaultHighlights() {
+  return DEFAULT_ABOUT_HIGHLIGHTS.map((item, index) => ({
+    title: item.title,
+    description: item.description,
+    order: index
+  }));
+}
+
+async function ensureAboutContentDocument() {
+  let about = await AboutContent.findOne();
+  let shouldSave = false;
+  if (!about) {
+    about = new AboutContent({
+      heroText: DEFAULT_ABOUT_TEXT,
+      story: cloneDefaultStory(),
+      highlights: cloneDefaultHighlights()
+    });
+    shouldSave = true;
+  } else {
+    if (!about.story || (!about.story.title && !about.story.description)) {
+      about.story = cloneDefaultStory();
+      shouldSave = true;
+    }
+    if (!Array.isArray(about.highlights) || !about.highlights.length) {
+      about.highlights = cloneDefaultHighlights();
+      shouldSave = true;
+    }
+  }
+  if (shouldSave) {
+    await about.save();
+  }
+  return about;
+}
+
+function formatStoryPayload(story) {
+  if (story && (story.title || story.description)) {
+    return {
+      title: typeof story.title === 'string' && story.title.trim()
+        ? story.title.trim()
+        : DEFAULT_ABOUT_STORY.title,
+      description: typeof story.description === 'string' && story.description.trim()
+        ? story.description.trim()
+        : DEFAULT_ABOUT_STORY.description
+    };
+  }
+  return cloneDefaultStory();
+}
+
+function normalizeHighlightOrderValue(value, fallback) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+function sanitizeAboutField(value, maxLength = 1000) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return '';
+  }
+  if (!Number.isFinite(maxLength) || maxLength <= 0) {
+    return trimmed;
+  }
+  return trimmed.slice(0, maxLength);
+}
+
+function reindexHighlightOrders(highlights) {
+  if (!Array.isArray(highlights)) {
+    return;
+  }
+  const sorted = highlights.sort((a, b) => normalizeHighlightOrderValue(a.order, 0) - normalizeHighlightOrderValue(b.order, 0));
+  sorted.forEach((item, index) => {
+    item.order = index;
+  });
+}
+
+function formatHighlightsPayload(highlights) {
+  const list = Array.isArray(highlights) ? highlights.slice() : [];
+  if (!list.length) {
+    return cloneDefaultHighlights().map((item, index) => ({
+      _id: `default-${index}`,
+      title: item.title,
+      description: item.description,
+      order: index
+    }));
+  }
+  return list
+    .map((item, index) => ({
+      _id: item && item._id ? String(item._id) : `highlight-${index}`,
+      title: item && item.title ? item.title : '',
+      description: item && item.description ? item.description : '',
+      order: normalizeHighlightOrderValue(item && item.order, index),
+      createdAtValue: item && item.createdAt ? new Date(item.createdAt).getTime() : 0
+    }))
+    .sort((a, b) => {
+      const orderDiff = a.order - b.order;
+      if (orderDiff !== 0) {
+        return orderDiff;
+      }
+      return a.createdAtValue - b.createdAtValue;
+    })
+    .map((item) => ({
+      _id: item._id,
+      title: item.title,
+      description: item.description,
+      order: item.order
+    }));
+}
+
+function buildAboutResponsePayload(about) {
+  const heroText = about && typeof about.heroText === 'string' && about.heroText.trim()
+    ? about.heroText.trim()
+    : DEFAULT_ABOUT_TEXT;
+
+  return {
+    heroImageData: about && about.heroImageData ? about.heroImageData : '',
+    heroImageUrl: about && about.heroImageUrl ? about.heroImageUrl : '',
+    heroText,
+    gallery: about && Array.isArray(about.gallery) ? about.gallery : [],
+    story: formatStoryPayload(about && about.story),
+    highlights: formatHighlightsPayload(about && about.highlights)
+  };
+}
 
 const PICKUP_TIME_CACHE_TTL_MS = 5 * 60 * 1000;
 const pickupTimeCache = new Map();
@@ -1979,20 +2152,103 @@ app.post('/api/accessibility-content', upload.single('accessibilityHeroImage'), 
 
 app.get('/api/about', async (req, res) => {
   try {
-    const about = await AboutContent.findOne().lean();
-    const payload = {
-      heroImageData: about && about.heroImageData ? about.heroImageData : '',
-      heroImageUrl: about && about.heroImageUrl ? about.heroImageUrl : '',
-      heroText: about && about.heroText ? about.heroText : DEFAULT_ABOUT_TEXT,
-      gallery: about && Array.isArray(about.gallery) ? about.gallery : []
-    };
+    let about = await AboutContent.findOne().lean();
     if (!about) {
-      payload.gallery = [];
+      const seeded = await ensureAboutContentDocument();
+      about = seeded.toObject();
     }
-    res.json(payload);
+    res.json(buildAboutResponsePayload(about));
   } catch (err) {
     console.error('Błąd pobierania sekcji O nas:', err);
     res.status(500).json({ error: 'Błąd pobierania sekcji O nas' });
+  }
+});
+
+app.put('/api/about/story', async (req, res) => {
+  try {
+    const title = sanitizeAboutField(req.body.title, 120);
+    const description = sanitizeAboutField(req.body.description, 1200);
+    if (!title || !description) {
+      return res.status(400).json({ error: 'Tytuł i opis kafelka są wymagane.' });
+    }
+    const about = await ensureAboutContentDocument();
+    about.story = { title, description };
+    await about.save();
+    res.json({ story: formatStoryPayload(about.story) });
+  } catch (err) {
+    console.error('Błąd zapisu kafelka historii O nas:', err);
+    res.status(500).json({ error: 'Nie udało się zapisać kafelka' });
+  }
+});
+
+app.post('/api/about/highlights', async (req, res) => {
+  try {
+    const title = sanitizeAboutField(req.body.title, 120);
+    const description = sanitizeAboutField(req.body.description, 600);
+    if (!title || !description) {
+      return res.status(400).json({ error: 'Tytuł i opis kafelka są wymagane.' });
+    }
+    const about = await ensureAboutContentDocument();
+    const currentMaxOrder = about.highlights.reduce((max, item) => (
+      Math.max(max, normalizeHighlightOrderValue(item.order, -1))
+    ), -1);
+    about.highlights.push({
+      title,
+      description,
+      order: currentMaxOrder + 1
+    });
+    await about.save();
+    res.status(201).json({ highlights: formatHighlightsPayload(about.highlights) });
+  } catch (err) {
+    console.error('Błąd dodawania kafelka O nas:', err);
+    res.status(500).json({ error: 'Nie udało się dodać kafelka' });
+  }
+});
+
+app.put('/api/about/highlights/:highlightId', async (req, res) => {
+  try {
+    const { highlightId } = req.params;
+    if (!highlightId) {
+      return res.status(400).json({ error: 'Brak identyfikatora kafelka' });
+    }
+    const title = sanitizeAboutField(req.body.title, 120);
+    const description = sanitizeAboutField(req.body.description, 600);
+    if (!title || !description) {
+      return res.status(400).json({ error: 'Tytuł i opis kafelka są wymagane.' });
+    }
+    const about = await ensureAboutContentDocument();
+    const highlight = about.highlights.id(highlightId);
+    if (!highlight) {
+      return res.status(404).json({ error: 'Nie znaleziono kafelka' });
+    }
+    highlight.title = title;
+    highlight.description = description;
+    await about.save();
+    res.json({ highlights: formatHighlightsPayload(about.highlights) });
+  } catch (err) {
+    console.error('Błąd aktualizacji kafelka O nas:', err);
+    res.status(500).json({ error: 'Nie udało się zaktualizować kafelka' });
+  }
+});
+
+app.delete('/api/about/highlights/:highlightId', async (req, res) => {
+  try {
+    const { highlightId } = req.params;
+    if (!highlightId) {
+      return res.status(400).json({ error: 'Brak identyfikatora kafelka' });
+    }
+    const about = await ensureAboutContentDocument();
+    const highlight = about.highlights.id(highlightId);
+    if (!highlight) {
+      return res.status(404).json({ error: 'Nie znaleziono kafelka' });
+    }
+    highlight.deleteOne();
+    reindexHighlightOrders(about.highlights);
+    await about.save();
+    res.json({ highlights: formatHighlightsPayload(about.highlights) });
+  } catch (err) {
+    console.error('Błąd usuwania kafelka O nas:', err);
+    res.status(500).json({ error: 'Nie udało się usunąć kafelka' });
   }
 });
 
@@ -2426,13 +2682,7 @@ app.post('/api/about', upload.single('aboutImage'), async (req, res) => {
       }
     }
 
-    const payload = {
-      heroImageData: about && about.heroImageData ? about.heroImageData : '',
-      heroImageUrl: about && about.heroImageUrl ? about.heroImageUrl : '',
-      heroText: about && about.heroText ? about.heroText : DEFAULT_ABOUT_TEXT,
-      gallery: about && Array.isArray(about.gallery) ? about.gallery : []
-    };
-    res.json(payload);
+    res.json(buildAboutResponsePayload(about || {}));
   } catch (err) {
     console.error('Błąd zapisu sekcji O nas:', err);
     res.status(500).json({ error: 'Nie udało się zapisać sekcji O nas' });

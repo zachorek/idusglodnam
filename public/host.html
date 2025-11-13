@@ -207,6 +207,45 @@
         <p class="host-about-preview__text" id="aboutPreviewText"></p>
       </div>
 
+      <div class="host-about-storycard glass-panel">
+        <div class="host-about-subheader">
+          <h3>Główny kafelek</h3>
+          <p>Zmieniaj nagłówek i opis, które wyświetlają się pod zdjęciem w sekcji O nas.</p>
+        </div>
+        <form id="aboutStoryForm" class="host-highlight-form">
+          <label class="about-field" for="aboutStoryTitleInput">
+            <span>Tytuł</span>
+            <input type="text" id="aboutStoryTitleInput" placeholder="np. Co robimy na co dzień" required>
+          </label>
+          <label class="about-field" for="aboutStoryDescriptionInput">
+            <span>Opis</span>
+            <textarea id="aboutStoryDescriptionInput" rows="3" placeholder="Krótki opis tego, co wyróżnia piekarnię" required></textarea>
+          </label>
+          <button type="submit" class="host-primary-btn host-primary-btn--compact">Zapisz kafelek</button>
+        </form>
+        <div id="aboutStoryMessage" class="host-message" aria-live="polite"></div>
+      </div>
+
+      <div class="host-about-highlights glass-panel">
+        <div class="host-about-subheader">
+          <h3>Pozostałe kafelki</h3>
+          <p>Dodaj dowolną liczbę kafelków, by opowiedzieć o zespole, składnikach lub procesie.</p>
+        </div>
+        <form id="aboutHighlightForm" class="host-highlight-form host-highlight-form--inline">
+          <label class="about-field" for="aboutHighlightTitleInput">
+            <span>Tytuł</span>
+            <input type="text" id="aboutHighlightTitleInput" placeholder="np. Składniki" required>
+          </label>
+          <label class="about-field" for="aboutHighlightDescriptionInput">
+            <span>Opis</span>
+            <textarea id="aboutHighlightDescriptionInput" rows="2" placeholder="Kilka zdań uzupełniających" required></textarea>
+          </label>
+          <button type="submit" class="host-primary-btn host-primary-btn--compact">Dodaj kafelek</button>
+        </form>
+        <div id="aboutHighlightMessage" class="host-message" aria-live="polite"></div>
+        <div id="aboutHighlightsManager" class="host-highlight-list"></div>
+      </div>
+
       <div class="host-about-gallery">
         <div class="host-about-gallery__header">
           <h3>Galeria zdjęć</h3>

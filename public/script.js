@@ -918,9 +918,13 @@ function createSkeletonCard(globalIndex) {
   card.classList.add('product-card', 'product-card--skeleton', 'product-card--animated', 'product-card--pending');
   card.style.setProperty('--card-delay', `${globalIndex * 90}ms`);
 
+  const layout = document.createElement('div');
+  layout.classList.add('product-card__body');
+  card.appendChild(layout);
+
   const thumb = document.createElement('div');
   thumb.classList.add('product-card__skeleton-thumb', 'skeleton-box');
-  card.appendChild(thumb);
+  layout.appendChild(thumb);
 
   const info = document.createElement('div');
   info.classList.add('product-info', 'product-info--skeleton');
@@ -941,7 +945,7 @@ function createSkeletonCard(globalIndex) {
   button.classList.add('skeleton-box', 'skeleton-box--button');
   info.appendChild(button);
 
-  card.appendChild(info);
+  layout.appendChild(info);
 
   const availability = document.createElement('div');
   availability.classList.add('product-availability-grid', 'product-availability-grid--skeleton');
@@ -1197,6 +1201,9 @@ function startPageLeave(callback) {
 function createProductCard(product) {
   const card = document.createElement('div');
   card.classList.add('product-card');
+  const layout = document.createElement('div');
+  layout.classList.add('product-card__body');
+  card.appendChild(layout);
   const productSlug = getProductSlugFromData(product);
   const productAnchorId = getProductAnchorIdForProduct(product);
   if (productAnchorId) {
@@ -1219,7 +1226,7 @@ function createProductCard(product) {
     image.src = imageSrc;
     image.alt = product.name || '';
     image.classList.add('product-thumb');
-    card.appendChild(image);
+    layout.appendChild(image);
   } else {
     card.classList.add('product-card--no-image');
   }
@@ -1284,8 +1291,8 @@ function createProductCard(product) {
   }
 
   content.appendChild(button);
+  layout.appendChild(content);
   const availability = buildAvailabilityTiles(product.availabilityDays);
-  card.appendChild(content);
   scheduleDescriptionTruncation(desc, descText);
   card.appendChild(availability);
 

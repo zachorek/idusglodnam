@@ -640,8 +640,27 @@ body.modal-open.page-transition-ready.page-transition-leave {
   align-self: stretch;
 }
 
-.product-info button {
+.product-info__body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 auto;
+}
+
+.product-info__footer {
   margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.product-price {
+  width: 100%;
+  text-align: right;
+}
+
+.product-info button {
   align-self: flex-end;
   padding: 10px 18px;
   font-size: 1rem;
@@ -726,6 +745,14 @@ body.modal-open.page-transition-ready.page-transition-leave {
   .product-info {
     align-items: center;
     gap: 6px;
+    text-align: center;
+  }
+
+  .product-info__footer {
+    align-items: center;
+  }
+
+  .product-price {
     text-align: center;
   }
 

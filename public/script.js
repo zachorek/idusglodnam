@@ -929,21 +929,29 @@ function createSkeletonCard(globalIndex) {
   const info = document.createElement('div');
   info.classList.add('product-info', 'product-info--skeleton');
 
+  const infoBody = document.createElement('div');
+  infoBody.classList.add('product-info__body');
+
   const title = document.createElement('div');
   title.classList.add('skeleton-box', 'skeleton-box--line', 'skeleton-box--title');
-  info.appendChild(title);
+  infoBody.appendChild(title);
 
   const textLine = document.createElement('div');
   textLine.classList.add('skeleton-box', 'skeleton-box--line');
-  info.appendChild(textLine);
+  infoBody.appendChild(textLine);
+
+  const footer = document.createElement('div');
+  footer.classList.add('product-info__footer');
 
   const price = document.createElement('div');
   price.classList.add('skeleton-box', 'skeleton-box--line', 'skeleton-box--price');
-  info.appendChild(price);
+  footer.appendChild(price);
 
   const button = document.createElement('div');
   button.classList.add('skeleton-box', 'skeleton-box--button');
-  info.appendChild(button);
+  footer.appendChild(button);
+
+  info.append(infoBody, footer);
 
   layout.appendChild(info);
 
@@ -1234,6 +1242,9 @@ function createProductCard(product) {
   const content = document.createElement('div');
   content.classList.add('product-info');
 
+  const infoBody = document.createElement('div');
+  infoBody.classList.add('product-info__body');
+
   const title = document.createElement('h3');
   title.textContent = product.name;
 
@@ -1242,8 +1253,13 @@ function createProductCard(product) {
   desc.classList.add('product-desc');
   desc.textContent = descText;
 
+  const footer = document.createElement('div');
+  footer.classList.add('product-info__footer');
+
   const price = document.createElement('p');
+  price.classList.add('product-price');
   price.innerHTML = `<strong>${product.price} zł</strong>`;
+  footer.appendChild(price);
 
   const button = document.createElement('button');
   button.textContent = 'Dodaj do koszyka';
@@ -1252,7 +1268,8 @@ function createProductCard(product) {
     addToCart(product._id, product.price, product.name);
   });
 
-  content.append(title, desc, price);
+  infoBody.append(title, desc);
+  content.append(infoBody, footer);
 
   let availabilityState = null;
   if (activeMenuDateString) {
@@ -1276,7 +1293,7 @@ function createProductCard(product) {
         stockBadge.classList.add('product-stock-badge--soldout');
       }
 
-      content.appendChild(stockBadge);
+      footer.appendChild(stockBadge);
     }
   }
 
@@ -1290,7 +1307,7 @@ function createProductCard(product) {
     button.classList.add('product-button--soldout');
   }
 
-  content.appendChild(button);
+  footer.appendChild(button);
   layout.appendChild(content);
   const availability = buildAvailabilityTiles(product.availabilityDays);
   scheduleDescriptionTruncation(desc, descText);

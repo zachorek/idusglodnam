@@ -2731,11 +2731,23 @@ function renderAboutHighlightsManager(highlights) {
   aboutHighlightsManager.appendChild(fragment);
 }
 
+function buildHighlightFormId(highlightId) {
+  const raw = typeof highlightId === 'string' ? highlightId : '';
+  const sanitized = raw.replace(/[^a-z0-9_-]+/gi, '');
+  if (sanitized) {
+    return `hostHighlightForm-${sanitized}`;
+  }
+  const randomSuffix = Math.random().toString(36).slice(2, 10);
+  return `hostHighlightForm-${Date.now().toString(36)}-${randomSuffix}`;
+}
+
 function buildHostHighlightItem(item) {
   const wrapper = document.createElement('article');
   wrapper.classList.add('host-highlight-item');
 
   const form = document.createElement('form');
+  const formId = buildHighlightFormId(item && item.id);
+  form.id = formId;
   form.dataset.highlightId = item.id;
 
   const titleLabel = document.createElement('label');
@@ -2770,6 +2782,7 @@ function buildHostHighlightItem(item) {
   saveButton.classList.add('host-primary-btn', 'host-primary-btn--compact');
   saveButton.textContent = 'Zapisz zmiany';
   saveButton.disabled = !item.isEditable;
+  saveButton.setAttribute('form', formId);
 
   const deleteButton = document.createElement('button');
   deleteButton.type = 'button';

@@ -1062,7 +1062,7 @@ function createHostCategorySection(title, items) {
 
 function createHostProductCard(product) {
   const card = document.createElement('article');
-  card.className = 'product-card host-product-card';
+  card.className = 'product-card host-product-card host-product-card--compact';
   if (product && product._id) {
     card.dataset.productId = product._id;
   }
@@ -1071,54 +1071,52 @@ function createHostProductCard(product) {
     card.classList.add('host-product-card--blocked');
   }
 
-  const imageSrc = product.imageUrl || product.imageData || '';
-  if (imageSrc) {
-    card.classList.add('product-card--with-image');
-    const img = document.createElement('img');
-    img.src = imageSrc;
-    img.alt = product.name || '';
-    img.className = 'product-thumb';
-    card.appendChild(img);
-  } else {
-    card.classList.add('product-card--no-image');
-  }
+  const content = document.createElement('div');
+  content.className = 'host-product-card__content';
+  card.appendChild(content);
 
-  const info = document.createElement('div');
-  info.className = 'product-info host-product-info';
+  const meta = document.createElement('div');
+  meta.className = 'host-product-card__meta';
+  content.appendChild(meta);
+
+  if (product.category) {
+    const categoryLabel = document.createElement('span');
+    categoryLabel.className = 'host-product-card__category';
+    categoryLabel.textContent = product.category;
+    meta.appendChild(categoryLabel);
+  }
 
   if (isBlocked) {
     const statusBadge = document.createElement('span');
     statusBadge.className = 'host-product-status-badge';
     statusBadge.textContent = 'Produkt ukryty w menu';
-    info.appendChild(statusBadge);
+    meta.appendChild(statusBadge);
   }
 
   const title = document.createElement('h3');
+  title.className = 'host-product-card__title';
   title.textContent = product.name || 'Produkt';
-  info.appendChild(title);
+  content.appendChild(title);
 
   const desc = document.createElement('p');
-  desc.className = 'product-desc';
+  desc.className = 'host-product-card__desc';
   const fullDesc = (product.desc || '').trim();
-  const truncatedDesc = truncateText(fullDesc, 160);
-  desc.textContent = truncatedDesc;
-  if (fullDesc && fullDesc !== truncatedDesc) {
-    desc.title = fullDesc;
-  }
-  info.appendChild(desc);
+  desc.textContent = fullDesc;
+  content.appendChild(desc);
 
   const price = document.createElement('p');
-  price.className = 'product-price';
-  price.innerHTML = `<strong>${product.price} zł</strong>`;
-  info.appendChild(price);
+  price.className = 'host-product-card__price';
+  price.innerHTML = `<strong>${Number(product.price || 0).toFixed(2)} zł</strong>`;
+  content.appendChild(price);
 
   const actions = document.createElement('div');
-  actions.className = 'host-product-actions';
+  actions.className = 'host-product-card__actions';
+  content.appendChild(actions);
 
   const editButton = document.createElement('button');
   editButton.type = 'button';
   editButton.dataset.id = product._id;
-  editButton.className = 'host-secondary-btn edit-product-btn host-product-action';
+  editButton.className = 'host-product-card__btn edit-product-btn';
   editButton.textContent = 'Edytuj kafelek';
   actions.appendChild(editButton);
 
@@ -1126,22 +1124,33 @@ function createHostProductCard(product) {
   blockButton.type = 'button';
   blockButton.dataset.id = product._id;
   blockButton.dataset.blocked = isBlocked ? 'true' : 'false';
-  blockButton.className = `host-secondary-btn block-product-btn host-product-action${isBlocked ? ' block-product-btn--active' : ''}`;
+  blockButton.className = 'host-product-card__btn host-product-card__btn--secondary block-product-btn';
   blockButton.textContent = isBlocked ? 'Odblokuj produkt' : 'Zablokuj produkt';
   actions.appendChild(blockButton);
 
   const deleteButton = document.createElement('button');
   deleteButton.type = 'button';
   deleteButton.dataset.id = product._id;
-  deleteButton.className = 'delete-btn delete-product-btn host-product-action';
+  deleteButton.className = 'host-product-card__btn host-product-card__btn--danger delete-product-btn';
   deleteButton.textContent = 'Usuń produkt';
   actions.appendChild(deleteButton);
 
-  info.appendChild(actions);
-  card.appendChild(info);
+  if (fullDesc) {
+    scheduleHostDescriptionTruncation(desc, fullDesc);
+  } else {
+    desc.removeAttribute('title');
+  }
 
   const availabilityMarkup = renderProductAvailabilityTiles(product.availabilityDays);
-  card.insertAdjacentHTML('beforeend', availabilityMarkup);
+  if (availabilityMarkup) {
+    const availabilityWrapper = document.createElement('div');
+    availabilityWrapper.innerHTML = availabilityMarkup.trim();
+    const availabilityGrid = availabilityWrapper.firstElementChild;
+    if (availabilityGrid) {
+      availabilityGrid.classList.add('host-product-card__availability');
+      content.appendChild(availabilityGrid);
+    }
+  }
 
   const pickupEditor = createProductPickupEditor(product);
   if (pickupEditor) {
@@ -1149,6 +1158,63 @@ function createHostProductCard(product) {
   }
 
   return card;
+}
+
+function scheduleHostDescriptionTruncation(element, fullText) {
+  if (!element) {
+    return;
+  }
+
+  const ellipsis = '...';
+  const maxAttempts = 4;
+  const raf = typeof requestAnimationFrame === 'function' ? requestAnimationFrame : (cb) => setTimeout(cb, 16);
+
+  function applyTruncation(attemptsLeft) {
+    if (!element.isConnected) {
+      if (attemptsLeft <= 0) {
+        return;
+      }
+      raf(() => applyTruncation(attemptsLeft - 1));
+      return;
+    }
+
+    element.textContent = fullText;
+
+    if (!fullText || element.scrollHeight <= element.clientHeight + 1) {
+      element.removeAttribute('title');
+      return;
+    }
+
+    let low = 0;
+    let high = fullText.length;
+    let result = fullText;
+    let truncated = false;
+
+    while (low <= high) {
+      const mid = Math.floor((low + high) / 2);
+      const candidate = `${fullText.slice(0, mid).trimEnd()}${ellipsis}`;
+      element.textContent = candidate;
+
+      if (element.scrollHeight > element.clientHeight + 1) {
+        high = mid - 1;
+      } else {
+        result = candidate;
+        truncated = mid < fullText.length;
+        low = mid + 1;
+      }
+    }
+
+    if (!truncated) {
+      element.textContent = fullText;
+      element.removeAttribute('title');
+      return;
+    }
+
+    element.textContent = result;
+    element.setAttribute('title', fullText);
+  }
+
+  raf(() => applyTruncation(maxAttempts));
 }
 
 function createProductPickupEditor(product) {
